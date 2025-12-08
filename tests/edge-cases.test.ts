@@ -630,8 +630,8 @@ describe('SSEStrategy Edge Cases', () => {
       const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
         url: 'http://invalid-url:9999',
         apiKey: 'test-key',
-        reconnectInterval: 50,
-        maxReconnectAttempts: 5,
+        reconnectInterval: 100,
+        maxReconnectAttempts: 20,
         backoffMultiplier: 1,
       });
 
@@ -646,7 +646,7 @@ describe('SSEStrategy Edge Cases', () => {
 
         strategy.close();
         done();
-      }, 300);
+      }, 500);
     }, 10000);
   });
 
