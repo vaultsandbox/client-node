@@ -49,7 +49,12 @@ jobs:
         run: npm ci
 
       - name: Run tests with coverage
-        run: npm test -- --coverage --testPathIgnorePatterns=email-flow --testPathIgnorePatterns=import-export --testPathIgnorePatterns=sse --testPathIgnorePatterns=polling --testPathIgnorePatterns=monitor
+        run: npm test -- --coverage
+        env:
+          VAULTSANDBOX_URL: ${{ secrets.VAULTSANDBOX_URL }}
+          VAULTSANDBOX_API_KEY: ${{ secrets.VAULTSANDBOX_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
