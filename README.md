@@ -8,6 +8,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@vaultsandbox/client.svg)](https://www.npmjs.com/package/@vaultsandbox/client)
 [![CI](https://github.com/vaultsandbox/client-node/actions/workflows/ci.yml/badge.svg)](https://github.com/vaultsandbox/client-node/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/vaultsandbox/client-node/graph/badge.svg)](https://codecov.io/gh/vaultsandbox/client-node)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
 

@@ -50,3 +50,10 @@ jobs:
 
       - name: Run tests with coverage
         run: npm test -- --coverage --testPathIgnorePatterns=email-flow --testPathIgnorePatterns=import-export --testPathIgnorePatterns=sse --testPathIgnorePatterns=polling --testPathIgnorePatterns=monitor
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: true
