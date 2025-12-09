@@ -405,6 +405,15 @@ Represents a decrypted email.
 - `delete(): Promise<void>` - Deletes this email
 - `getRaw(): Promise<RawEmail>` - Gets raw email source
 
+### RawEmail
+
+Returned by `email.getRaw()` and `inbox.getRawEmail()`.
+
+**Properties:**
+
+- `id: string` - Email ID
+- `raw: string` - The raw email source (RFC 5322 format)
+
 ### AuthResults
 
 Returned by `email.authResults`, this object contains email authentication results (SPF, DKIM, DMARC) and a validation helper.
