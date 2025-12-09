@@ -610,7 +610,7 @@ All cryptographic operations are performed transparently - developers never need
 
 - [Documentation](https://vaultsandbox.dev/client-node/)
 - [Issue Tracker](https://github.com/vaultsandbox/client-node/issues)
-- [Discussions](https://github.com/vaultsandbox/client-node/discussions)
+- [Discussions](https://github.com/vaultsandbox/gateway/discussions)
 - [Website](https://www.vaultsandbox.com)
 
 ## Contributing
