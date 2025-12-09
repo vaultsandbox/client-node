@@ -608,7 +608,7 @@ All cryptographic operations are performed transparently - developers never need
 
 ## Support
 
-- [Documentation](https://vaultsandbox.dev/client-node/installation)
+- [Documentation](https://vaultsandbox.dev/client-node/)
 - [Issue Tracker](https://github.com/vaultsandbox/client-node/issues)
 - [Discussions](https://github.com/vaultsandbox/client-node/discussions)
 - [Website](https://www.vaultsandbox.com)
