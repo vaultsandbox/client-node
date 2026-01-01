@@ -225,41 +225,39 @@ export interface RawEmailData {
  * The result of an SPF (Sender Policy Framework) validation check.
  */
 export interface SPFResult {
-  status: 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'temperror' | 'permerror';
+  result: 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'temperror' | 'permerror';
   domain?: string;
   ip?: string;
-  info?: string;
+  details?: string;
 }
 
 /**
  * The result of a DKIM (DomainKeys Identified Mail) validation check.
  */
 export interface DKIMResult {
-  status: 'pass' | 'fail' | 'none';
+  result: 'pass' | 'fail' | 'none';
   domain?: string;
   selector?: string;
-  info?: string;
+  signature?: string;
 }
 
 /**
  * The result of a DMARC (Domain-based Message Authentication, Reporting, and Conformance) validation check.
  */
 export interface DMARCResult {
-  status: 'pass' | 'fail' | 'none';
+  result: 'pass' | 'fail' | 'none';
   policy?: 'none' | 'quarantine' | 'reject';
   aligned?: boolean;
   domain?: string;
-  info?: string;
 }
 
 /**
  * The result of a reverse DNS validation check.
  */
 export interface ReverseDNSResult {
-  status: 'pass' | 'fail' | 'none';
+  verified: boolean;
   ip?: string;
   hostname?: string;
-  info?: string;
 }
 
 /**
@@ -374,15 +372,6 @@ export interface SSEConfig {
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
   backoffMultiplier?: number;
-}
-
-/**
- * @internal
- */
-export interface SSEEvent {
-  inboxHash: string;
-  emailId: string;
-  emailData: EmailData;
 }
 
 /**

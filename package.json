@@ -1,6 +1,6 @@
 {
   "name": "@vaultsandbox/client",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Node.js SDK for VaultSandbox Gateway — quantum-safe email testing with zero crypto knowledge required. Create isolated inboxes, validate SPF/DKIM/DMARC, and test your full email stack in CI/CD pipelines.",
   "type": "module",
   "homepage": "https://github.com/vaultsandbox/client-node",

@@ -69,16 +69,16 @@ class AuthResults implements IAuthResults {
     const failures: string[] = [];
 
     // Check SPF
-    const spfPassed = this.spf?.status === 'pass';
+    const spfPassed = this.spf?.result === 'pass';
     if (this.spf && !spfPassed) {
-      failures.push(`SPF check failed: ${this.spf.status}${this.spf.domain ? ` (domain: ${this.spf.domain})` : ''}`);
+      failures.push(`SPF check failed: ${this.spf.result}${this.spf.domain ? ` (domain: ${this.spf.domain})` : ''}`);
     }
 
     // Check DKIM (at least one signature must pass)
-    const dkimPassed = this.dkim?.some((d) => d.status === 'pass') ?? false;
+    const dkimPassed = this.dkim?.some((d) => d.result === 'pass') ?? false;
     if (this.dkim && this.dkim.length > 0 && !dkimPassed) {
       const failedDomains = this.dkim
-        .filter((d) => d.status !== 'pass')
+        .filter((d) => d.result !== 'pass')
         .map((d) => d.domain)
         .filter(Boolean)
         .join(', ');
@@ -86,16 +86,16 @@ class AuthResults implements IAuthResults {
     }
 
     // Check DMARC
-    const dmarcPassed = this.dmarc?.status === 'pass';
+    const dmarcPassed = this.dmarc?.result === 'pass';
     if (this.dmarc && !dmarcPassed) {
-      failures.push(`DMARC policy: ${this.dmarc.status}${this.dmarc.policy ? ` (policy: ${this.dmarc.policy})` : ''}`);
+      failures.push(`DMARC policy: ${this.dmarc.result}${this.dmarc.policy ? ` (policy: ${this.dmarc.policy})` : ''}`);
     }
 
-    // Check Reverse DNS
-    const reverseDnsPassed = this.reverseDns?.status === 'pass';
+    // Check Reverse DNS - uses "verified" boolean
+    const reverseDnsPassed = this.reverseDns?.verified === true;
     if (this.reverseDns && !reverseDnsPassed) {
       failures.push(
-        `Reverse DNS check failed: ${this.reverseDns.status}${this.reverseDns.hostname ? ` (hostname: ${this.reverseDns.hostname})` : ''}`,
+        `Reverse DNS check failed${this.reverseDns.hostname ? ` (hostname: ${this.reverseDns.hostname})` : ''}`,
       );
     }
 

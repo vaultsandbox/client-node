@@ -120,14 +120,14 @@ describeExamples('README Examples', () => {
       }),
     );
 
-    if (email.authResults.spf?.status) {
-      expect(email.authResults.spf.status).toMatch(/pass|fail|softfail|neutral|temperror|permerror/);
+    if (email.authResults.spf?.result) {
+      expect(email.authResults.spf.result).toMatch(/pass|fail|softfail|neutral|temperror|permerror/);
     }
     if (email.authResults.dkim) {
       expect(email.authResults.dkim.length).toBeGreaterThan(0);
     }
-    if (email.authResults.dmarc?.status) {
-      expect(email.authResults.dmarc.status).toMatch(/pass|fail|neutral|temperror|permerror/);
+    if (email.authResults.dmarc?.result) {
+      expect(email.authResults.dmarc.result).toMatch(/pass|fail|neutral|temperror|permerror/);
     }
   }, 30000);
 

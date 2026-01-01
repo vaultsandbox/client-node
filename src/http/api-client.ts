@@ -71,7 +71,7 @@ export class ApiClient {
         const retryCount = requestConfig.__retryCount;
         const shouldRetry = retryCount < maxRetries && error.response && retryOn.includes(error.response.status);
 
-        if (shouldRetry && config) {
+        if (shouldRetry) {
           requestConfig.__retryCount = retryCount + 1;
           await sleep(retryDelay * Math.pow(2, retryCount));
           return this.client.request(config);
