@@ -12,10 +12,18 @@ export function toBase64Url(buffer: Uint8Array): string {
 
 /**
  * Converts a base64url-encoded string to a Uint8Array
+ * Per spec Section 2.2, rejects input containing +, /, or =
  */
 export function fromBase64Url(base64url: string): Uint8Array {
-  // Add padding if needed
+  // Reject invalid characters per spec Section 2.2
+  if (/[+/=]/.test(base64url)) {
+    throw new Error('Invalid base64url: contains forbidden characters (+, /, or =)');
+  }
+
+  // Convert base64url to standard base64
   let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+
+  // Add padding if needed
   const pad = base64.length % 4;
   if (pad) {
     base64 += '='.repeat(4 - pad);

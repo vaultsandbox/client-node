@@ -223,7 +223,7 @@ export class SSEStrategy implements DeliveryStrategy {
       debug('Received message: %s', data.substring(0, 200));
       const messageData: SSEMessageData = JSON.parse(data);
       debug('Parsed message data: %s', JSON.stringify(messageData, null, 2).substring(0, 500));
-      const { inboxId, emailId, encryptedMetadata } = messageData;
+      const { inboxId, emailId } = messageData;
 
       debug('Looking for subscription with inboxId: %s', inboxId);
       debug('Available subscriptions: %O', Array.from(this.subscriptions.keys()));
@@ -240,14 +240,8 @@ export class SSEStrategy implements DeliveryStrategy {
         return;
       }
 
-      // Construct EmailData object from SSE message
-      const emailData = {
-        id: emailId,
-        inboxId: inboxId,
-        receivedAt: new Date().toISOString(), // SSE doesn't provide this, use current time
-        isRead: false,
-        encryptedMetadata: encryptedMetadata,
-      };
+      // SSE notification only contains metadata, fetch full email from API
+      const emailData = await this.apiClient.getEmail(subscription.emailAddress, emailId);
 
       // Decrypt email
       const email = await decryptEmailData(emailData, subscription.keypair, subscription.emailAddress, this.apiClient);

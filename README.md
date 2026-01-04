@@ -4,6 +4,8 @@
   <img alt="VaultSandbox" src="./assets/logo-dark.svg">
 </picture>
 
+> **VaultSandbox is in Public Beta.** Join the journey to 1.0. Share feedback on [GitHub](https://github.com/vaultsandbox/gateway/discussions).
+
 # @vaultsandbox/client
 
 [![npm version](https://img.shields.io/npm/v/@vaultsandbox/client.svg)](https://www.npmjs.com/package/@vaultsandbox/client)

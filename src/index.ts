@@ -18,6 +18,7 @@ export type {
   WaitOptions,
   WaitForCountOptions,
   IEmail,
+  IEmailMetadata,
   AttachmentData,
   RawEmail,
   SPFResult,

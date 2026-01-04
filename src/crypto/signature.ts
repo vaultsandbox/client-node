@@ -7,7 +7,7 @@ import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { fromBase64Url, ensureOwnBuffer, concatBuffers } from './utils.js';
 import { SignatureVerificationError } from '../types/index.js';
 import type { EncryptedData } from '../types/index.js';
-import { HKDF_CONTEXT, MLDSA65_PUBLIC_KEY_SIZE } from './constants.js';
+import { HKDF_CONTEXT, MLDSA_PUBLIC_KEY_SIZE } from './constants.js';
 
 /**
  * Builds the algorithm ciphersuite string from algs object
@@ -113,7 +113,7 @@ export function verifySignatureSafe(encryptedData: EncryptedData): boolean {
 export function validateServerPublicKey(serverPublicKey: string): boolean {
   try {
     const publicKey = fromBase64Url(serverPublicKey);
-    return publicKey.length === MLDSA65_PUBLIC_KEY_SIZE;
+    return publicKey.length === MLDSA_PUBLIC_KEY_SIZE;
   } catch {
     return false;
   }

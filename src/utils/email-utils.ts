@@ -11,7 +11,7 @@ import type { ApiClient } from '../http/api-client.js';
 
 /**
  * Decrypts an EmailData object into an Email instance.
- * If only metadata is present, fetch the full email (including parsed content) first.
+ * Expects full email data with encryptedParsed content.
  * IMPORTANT: Signature verification happens BEFORE decryption for security
  */
 export async function decryptEmailData(
@@ -20,20 +20,18 @@ export async function decryptEmailData(
   emailAddress: string,
   apiClient: ApiClient,
 ): Promise<IEmail> {
-  const fullEmailData = emailData.encryptedParsed ? emailData : await apiClient.getEmail(emailAddress, emailData.id);
-
   // Verify signature FIRST (before decryption) - signature includes server public key
-  verifySignature(fullEmailData.encryptedMetadata);
+  verifySignature(emailData.encryptedMetadata);
 
   // Decrypt metadata
-  const metadata = await decryptMetadata<DecryptedMetadata>(fullEmailData.encryptedMetadata, keypair);
+  const metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, keypair);
 
   // Decrypt parsed content if available
   let parsed: DecryptedParsed | null = null;
-  if (fullEmailData.encryptedParsed) {
+  if (emailData.encryptedParsed) {
     // Verify signature for parsed content too
-    verifySignature(fullEmailData.encryptedParsed);
-    parsed = await decryptParsed<DecryptedParsed>(fullEmailData.encryptedParsed, keypair);
+    verifySignature(emailData.encryptedParsed);
+    parsed = await decryptParsed<DecryptedParsed>(emailData.encryptedParsed, keypair);
 
     // Transform attachment content from base64 strings to Uint8Array
     // The server returns attachment content as base64-encoded strings, but our type expects Uint8Array
@@ -52,7 +50,7 @@ export async function decryptEmailData(
     }
   }
 
-  return new Email(fullEmailData, metadata, parsed, emailAddress, apiClient, keypair);
+  return new Email(emailData, metadata, parsed, emailAddress, apiClient, keypair);
 }
 
 /**

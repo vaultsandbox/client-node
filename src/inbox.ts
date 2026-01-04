@@ -3,9 +3,10 @@
  */
 
 import createDebug from 'debug';
-import { decryptRaw } from './crypto/decrypt.js';
+import { decryptMetadata, decryptRaw } from './crypto/decrypt.js';
 import { decryptEmailData } from './utils/email-utils.js';
-import { toBase64 } from './crypto/utils.js';
+import { toBase64Url } from './crypto/utils.js';
+import { EXPORT_VERSION } from './crypto/constants.js';
 import type {
   InboxData,
   Keypair,
@@ -15,7 +16,9 @@ import type {
   RawEmail,
   Subscription,
   IEmail,
+  IEmailMetadata,
   ExportedInboxData,
+  DecryptedMetadata,
 } from './types/index.js';
 import { TimeoutError, StrategyError } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
@@ -68,13 +71,13 @@ export class Inbox {
   }
 
   /**
-   * Retrieves all emails from the inbox.
+   * Retrieves all emails from the inbox with full content.
    *
    * @returns A promise that resolves to an array of `Email` instances.
    */
   async listEmails(): Promise<IEmail[]> {
     debug('Listing emails for inbox %s', this.emailAddress);
-    const emailsData = await this.apiClient.listEmails(this.emailAddress);
+    const emailsData = await this.apiClient.listEmails(this.emailAddress, true);
     debug('Retrieved %d raw email data entries', emailsData.length);
     const emails: IEmail[] = [];
 
@@ -84,6 +87,32 @@ export class Inbox {
     }
 
     debug('Successfully decrypted %d emails for inbox %s', emails.length, this.emailAddress);
+    return emails;
+  }
+
+  /**
+   * Retrieves all emails from the inbox with metadata only (no content).
+   *
+   * @returns A promise that resolves to an array of email metadata.
+   */
+  async listEmailsMetadataOnly(): Promise<IEmailMetadata[]> {
+    debug('Listing email metadata for inbox %s', this.emailAddress);
+    const emailsData = await this.apiClient.listEmails(this.emailAddress, false);
+    debug('Retrieved %d raw email data entries', emailsData.length);
+    const emails: IEmailMetadata[] = [];
+
+    for (const emailData of emailsData) {
+      const metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, this.keypair);
+      emails.push({
+        id: emailData.id,
+        from: metadata.from,
+        subject: metadata.subject,
+        receivedAt: new Date(metadata.receivedAt ?? emailData.receivedAt),
+        isRead: emailData.isRead,
+      });
+    }
+
+    debug('Successfully decrypted %d email metadata for inbox %s', emails.length, this.emailAddress);
     return emails;
   }
 
@@ -246,17 +275,17 @@ export class Inbox {
 
   /**
    * Exports this inbox, including its key material, for backup/sharing.
-   * Keys are returned in plain base64 to keep import/export symmetric.
+   * See vaultsandbox-spec.md Section 9: Inbox Export Format
    */
   export(): ExportedInboxData {
     debug('Exporting inbox %s with key material', this.emailAddress);
-    const exportedData = {
+    const exportedData: ExportedInboxData = {
+      version: EXPORT_VERSION,
       emailAddress: this.emailAddress,
       expiresAt: this.expiresAt.toISOString(),
       inboxHash: this.inboxHash,
       serverSigPk: this.serverPublicKey,
-      publicKeyB64: toBase64(this.keypair.publicKey),
-      secretKeyB64: toBase64(this.keypair.secretKey),
+      secretKey: toBase64Url(this.keypair.secretKey),
       exportedAt: new Date().toISOString(),
     };
     debug('Successfully exported inbox %s', this.emailAddress);

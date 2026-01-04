@@ -196,13 +196,17 @@ export class ApiClient {
   /**
    * Lists all emails in an inbox.
    * @param emailAddress - The email address of the inbox
+   * @param includeContent - Whether to include full email content (default: false)
    * @returns Promise resolving to an array of emails
    * @throws {NetworkError} If network communication fails
    * @throws {InboxNotFoundError} If the inbox does not exist
    * @throws {ApiError} If the server returns an error response
    */
-  async listEmails(emailAddress: string): Promise<EmailData[]> {
-    const response = await this.client.get<EmailData[]>(`/api/inboxes/${encodeURIComponent(emailAddress)}/emails`);
+  async listEmails(emailAddress: string, includeContent = false): Promise<EmailData[]> {
+    const query = includeContent ? '?includeContent=true' : '';
+    const response = await this.client.get<EmailData[]>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/emails${query}`,
+    );
     return response.data;
   }
 

@@ -60,8 +60,8 @@ export class PollingStrategy implements DeliveryStrategy {
           lastHash = syncStatus.emailsHash;
 
           if (syncStatus.emailCount > 0) {
-            // Hash changed - fetch full email list
-            const emailsData = await this.apiClient.listEmails(emailAddress);
+            // Hash changed - fetch full email list with content
+            const emailsData = await this.apiClient.listEmails(emailAddress, true);
             const emails = await this.decryptEmails(emailsData, keypair, emailAddress);
             const matchingEmail = findMatchingEmail(emails, options);
 
@@ -141,7 +141,7 @@ export class PollingStrategy implements DeliveryStrategy {
     const poll = async () => {
       while (isActive) {
         try {
-          const emailsData = await this.apiClient.listEmails(emailAddress);
+          const emailsData = await this.apiClient.listEmails(emailAddress, true);
           const emails = await this.decryptEmails(emailsData, keypair, emailAddress);
 
           // Notify about new emails we haven't seen

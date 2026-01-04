@@ -48,27 +48,28 @@ export interface CreateInboxOptions {
 /**
  * Exported inbox data structure for sharing or backup purposes.
  * Contains all necessary information to import and access an inbox.
+ * See vaultsandbox-spec.md Section 9: Inbox Export Format
  */
 export interface ExportedInboxData {
-  /** The email address for this inbox */
+  /** Export format version. MUST be 1. */
+  version: number;
+
+  /** The email address for this inbox. MUST contain @. */
   emailAddress: string;
 
-  /** ISO timestamp when the inbox expires */
+  /** ISO 8601 timestamp when the inbox expires */
   expiresAt: string;
 
   /** Unique hash identifier for the inbox */
   inboxHash: string;
 
-  /** Server's public signing key */
+  /** Server's ML-DSA-65 public key (base64url encoded, 1952 bytes decoded) */
   serverSigPk: string;
 
-  /** Base64-encoded public key */
-  publicKeyB64: string;
+  /** ML-KEM-768 secret key (base64url encoded, 2400 bytes decoded) */
+  secretKey: string;
 
-  /** Base64-encoded secret key for decryption */
-  secretKeyB64: string;
-
-  /** ISO timestamp when the inbox was exported */
+  /** ISO 8601 timestamp when the export was created */
   exportedAt: string;
 }
 
@@ -289,6 +290,17 @@ export interface AuthValidation {
 }
 
 // ===== Email Class Interface =====
+
+/**
+ * Interface for email metadata (without content).
+ */
+export interface IEmailMetadata {
+  id: string;
+  from: string;
+  subject: string;
+  receivedAt: Date;
+  isRead: boolean;
+}
 
 /**
  * Interface for the Email class.

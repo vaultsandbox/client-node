@@ -93,36 +93,35 @@ describeIntegration('Inbox Import/Export Tests', () => {
 
       const exportedData = client.exportInbox(inbox);
 
-      // Verify structure
+      // Verify structure per spec Section 9
       expect(exportedData).toBeDefined();
+      expect(exportedData.version).toBe(1);
       expect(exportedData.emailAddress).toBe(inbox.emailAddress);
       expect(exportedData.inboxHash).toBe(inbox.inboxHash);
       expect(exportedData.expiresAt).toBeDefined();
       expect(exportedData.serverSigPk).toBeDefined();
-      expect(exportedData.publicKeyB64).toBeDefined();
-      expect(exportedData.secretKeyB64).toBeDefined();
+      expect(exportedData.secretKey).toBeDefined();
       expect(exportedData.exportedAt).toBeDefined();
 
       // Verify field types
+      expect(typeof exportedData.version).toBe('number');
       expect(typeof exportedData.emailAddress).toBe('string');
       expect(typeof exportedData.inboxHash).toBe('string');
       expect(typeof exportedData.expiresAt).toBe('string');
       expect(typeof exportedData.serverSigPk).toBe('string');
-      expect(typeof exportedData.publicKeyB64).toBe('string');
-      expect(typeof exportedData.secretKeyB64).toBe('string');
+      expect(typeof exportedData.secretKey).toBe('string');
       expect(typeof exportedData.exportedAt).toBe('string');
 
       // Verify timestamps are valid ISO strings
       expect(() => new Date(exportedData.expiresAt).toISOString()).not.toThrow();
       expect(() => new Date(exportedData.exportedAt).toISOString()).not.toThrow();
 
-      // Verify keys are valid base64 (can contain +, /, and = characters)
-      expect(exportedData.publicKeyB64).toMatch(/^[A-Za-z0-9+/]+=*$/);
-      expect(exportedData.secretKeyB64).toMatch(/^[A-Za-z0-9+/]+=*$/);
+      // Verify keys are valid base64url (no +, /, or = characters per spec Section 2.2)
+      expect(exportedData.secretKey).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(exportedData.serverSigPk).toMatch(/^[A-Za-z0-9_-]+$/);
 
       // Verify keys are non-empty
-      expect(exportedData.publicKeyB64.length).toBeGreaterThan(0);
-      expect(exportedData.secretKeyB64.length).toBeGreaterThan(0);
+      expect(exportedData.secretKey.length).toBeGreaterThan(0);
     });
 
     it('should export an inbox by email address string', async () => {
@@ -225,12 +224,13 @@ describeIntegration('Inbox Import/Export Tests', () => {
       await clientB.close();
     });
 
-    it('should throw InvalidImportDataError for invalid base64 encoding', async () => {
+    it('should throw InvalidImportDataError for invalid base64url encoding', async () => {
       const inbox = await client.createInbox();
       createdInboxes.push(inbox);
 
       const exportedData = client.exportInbox(inbox);
-      const invalidData = { ...exportedData, publicKeyB64: 'invalid!!!base64' };
+      // Use invalid base64url characters (+, /, or =)
+      const invalidData = { ...exportedData, secretKey: 'invalid+slash/equals=' };
 
       // Need a new client
       const clientB = new VaultSandboxClient({
@@ -247,8 +247,8 @@ describeIntegration('Inbox Import/Export Tests', () => {
       createdInboxes.push(inbox);
 
       const exportedData = client.exportInbox(inbox);
-      // Create a short invalid key (valid base64 but wrong length)
-      const invalidData = { ...exportedData, publicKeyB64: 'dGVzdA==' };
+      // Create a short invalid key (valid base64url but wrong length)
+      const invalidData = { ...exportedData, secretKey: 'dGVzdA' };
 
       // Need a new client
       const clientB = new VaultSandboxClient({
@@ -257,7 +257,7 @@ describeIntegration('Inbox Import/Export Tests', () => {
       });
 
       await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
-      await expect(clientB.importInbox(invalidData)).rejects.toThrow('Invalid public key length');
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('Invalid secret key length');
       await clientB.close();
     });
 
@@ -266,8 +266,13 @@ describeIntegration('Inbox Import/Export Tests', () => {
       createdInboxes.push(inbox);
 
       const exportedData = client.exportInbox(inbox);
-      // Change server public key to simulate cross-server import
-      const invalidData = { ...exportedData, serverSigPk: 'different-server-key' };
+      // Create a valid-sized but different server public key (1952 bytes, base64url encoded)
+      const fakeServerKey = Buffer.from(new Uint8Array(1952).fill(0xff))
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+      const invalidData = { ...exportedData, serverSigPk: fakeServerKey };
 
       // Need a new client
       const clientB = new VaultSandboxClient({

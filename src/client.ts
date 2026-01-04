@@ -7,8 +7,9 @@ import { readFile, writeFile } from 'fs/promises';
 import createDebug from 'debug';
 import { ApiClient } from './http/api-client.js';
 import { Inbox } from './inbox.js';
-import { generateKeypair, PUBLIC_KEY_SIZE, SECRET_KEY_SIZE, derivePublicKeyFromSecret } from './crypto/keypair.js';
-import { toBase64Url, toBase64, fromBase64 } from './crypto/utils.js';
+import { generateKeypair, SECRET_KEY_SIZE, derivePublicKeyFromSecret } from './crypto/keypair.js';
+import { toBase64Url, fromBase64Url } from './crypto/utils.js';
+import { EXPORT_VERSION, MLDSA_PUBLIC_KEY_SIZE } from './crypto/constants.js';
 import { SSEStrategy } from './strategies/sse-strategy.js';
 import { PollingStrategy } from './strategies/polling-strategy.js';
 import type { DeliveryStrategy } from './strategies/delivery-strategy.js';
@@ -186,6 +187,17 @@ export class VaultSandboxClient {
   }
 
   /**
+   * Deletes a specific inbox by its email address.
+   *
+   * @param emailAddress - The email address of the inbox to delete.
+   * @returns A promise that resolves when the inbox is deleted.
+   */
+  async deleteInbox(emailAddress: string): Promise<void> {
+    await this.apiClient.deleteInbox(emailAddress);
+    this.inboxes.delete(emailAddress);
+  }
+
+  /**
    * Retrieves information about the VaultSandbox server.
    *
    * @returns A promise that resolves to the server information.
@@ -252,6 +264,7 @@ export class VaultSandboxClient {
 
   /**
    * Imports an inbox from exported data.
+   * See vaultsandbox-spec.md Section 10: Inbox Import Process
    *
    * @param data - The exported inbox data
    * @returns A promise that resolves to the imported Inbox instance
@@ -261,14 +274,31 @@ export class VaultSandboxClient {
    * const importedInbox = await client.importInbox(exportedData);
    */
   async importInbox(data: ExportedInboxData): Promise<Inbox> {
+    // Step 2: Validate version
+    this.validateVersion(data);
+
+    // Step 3: Validate required fields
     this.validateRequiredFields(data);
-    this.ensurePublicKeyPresent(data);
+
+    // Step 4: Validate emailAddress
+    this.validateEmailAddress(data.emailAddress);
+
+    // Step 5: Validate inboxHash
+    this.validateInboxHash(data.inboxHash);
+
+    // Step 8: Validate timestamps
     this.validateTimestamps(data);
+
+    // Check for duplicates
     this.checkInboxDoesNotExist(data.emailAddress);
 
     await this.ensureInitialized();
+
+    // Step 7: Validate and decode serverSigPk
+    this.validateServerSigPkSize(data.serverSigPk);
     this.validateServerPublicKey(data.serverSigPk);
 
+    // Step 6: Validate and decode secretKey
     const keypair = this.decodeAndValidateKeys(data);
     const inboxData = this.buildInboxData(data);
 
@@ -276,47 +306,85 @@ export class VaultSandboxClient {
   }
 
   /**
+   * Validates the export format version.
+   * @private
+   * @param data - The exported inbox data to validate
+   * @throws {InvalidImportDataError} If version is not supported
+   */
+  private validateVersion(data: ExportedInboxData): void {
+    if (data.version !== EXPORT_VERSION) {
+      throw new InvalidImportDataError(`Unsupported version: ${data.version}, expected ${EXPORT_VERSION}`);
+    }
+  }
+
+  /**
    * Validates that all required fields are present and non-empty in the exported inbox data.
    * @private
    * @param data - The exported inbox data to validate
-   * @throws {InvalidImportDataError} If any required field is missing, not a string, or empty
+   * @throws {InvalidImportDataError} If any required field is missing or empty
    */
   private validateRequiredFields(data: ExportedInboxData): void {
-    const requiredFields: (keyof ExportedInboxData)[] = [
+    const requiredStringFields: (keyof ExportedInboxData)[] = [
       'emailAddress',
       'expiresAt',
       'inboxHash',
       'serverSigPk',
-      'secretKeyB64',
+      'secretKey',
       'exportedAt',
     ];
 
-    for (const field of requiredFields) {
-      if (!data[field] || typeof data[field] !== 'string' || data[field].trim() === '') {
+    for (const field of requiredStringFields) {
+      const value = data[field];
+      if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
         throw new InvalidImportDataError(`Missing or invalid field: ${field}`);
       }
     }
   }
 
   /**
-   * Ensures the public key is present in the exported data, deriving it from the secret key if necessary.
-   * In ML-KEM (Kyber), the public key is embedded in the secret key, so we can extract it if missing.
+   * Validates that the email address contains exactly one @ character.
    * @private
-   * @param data - The exported inbox data (will be mutated to add publicKeyB64 if missing)
-   * @throws {InvalidImportDataError} If the secret key is invalid or derivation fails
+   * @param emailAddress - The email address to validate
+   * @throws {InvalidImportDataError} If email format is invalid
    */
-  private ensurePublicKeyPresent(data: ExportedInboxData): void {
-    if (data.publicKeyB64) {
-      return;
+  private validateEmailAddress(emailAddress: string): void {
+    const atCount = (emailAddress.match(/@/g) || []).length;
+    if (atCount !== 1) {
+      throw new InvalidImportDataError('Invalid email address: must contain exactly one @ character');
     }
+  }
 
+  /**
+   * Validates that the inbox hash is non-empty.
+   * @private
+   * @param inboxHash - The inbox hash to validate
+   * @throws {InvalidImportDataError} If inbox hash is empty
+   */
+  private validateInboxHash(inboxHash: string): void {
+    if (!inboxHash || inboxHash.trim() === '') {
+      throw new InvalidImportDataError('Invalid inbox hash: must be non-empty');
+    }
+  }
+
+  /**
+   * Validates that the server signature public key has the correct size.
+   * @private
+   * @param serverSigPk - The server public key (base64url encoded)
+   * @throws {InvalidImportDataError} If server public key has invalid size
+   */
+  private validateServerSigPkSize(serverSigPk: string): void {
     try {
-      const secretKeyBytes = fromBase64(data.secretKeyB64);
-      const publicKeyBytes = derivePublicKeyFromSecret(secretKeyBytes);
-      data.publicKeyB64 = toBase64(publicKeyBytes);
+      const decoded = fromBase64Url(serverSigPk);
+      if (decoded.length !== MLDSA_PUBLIC_KEY_SIZE) {
+        throw new InvalidImportDataError(
+          `Invalid server public key size: expected ${MLDSA_PUBLIC_KEY_SIZE}, got ${decoded.length}`,
+        );
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new InvalidImportDataError(`Failed to derive public key from secret key: ${message}`);
+      if (error instanceof InvalidImportDataError) throw error;
+      throw new InvalidImportDataError(
+        `Invalid server public key encoding: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -361,18 +429,20 @@ export class VaultSandboxClient {
   }
 
   /**
-   * Decodes the cryptographic keys from base64 and validates their lengths.
+   * Decodes the cryptographic keys from base64url and validates their lengths.
+   * Public key is derived from secret key per spec Section 10.2.
    * @private
-   * @param data - The exported inbox data containing base64-encoded keys
+   * @param data - The exported inbox data containing base64url-encoded keys
    * @returns A keypair object with decoded keys and base64url-encoded public key
    * @throws {InvalidImportDataError} If keys cannot be decoded or have invalid lengths
    */
   private decodeAndValidateKeys(data: ExportedInboxData): Keypair {
-    const publicKey = this.decodeBase64Key(data.publicKeyB64, 'public');
-    const secretKey = this.decodeBase64Key(data.secretKeyB64, 'secret');
-
-    this.validateKeyLength(publicKey, PUBLIC_KEY_SIZE, 'public');
+    // Decode and validate secret key
+    const secretKey = this.decodeBase64UrlKey(data.secretKey, 'secret');
     this.validateKeyLength(secretKey, SECRET_KEY_SIZE, 'secret');
+
+    // Derive public key from secret key per spec Section 10.2
+    const publicKey = derivePublicKeyFromSecret(secretKey);
 
     return {
       publicKey,
@@ -382,18 +452,18 @@ export class VaultSandboxClient {
   }
 
   /**
-   * Decodes a base64-encoded cryptographic key to a byte array.
+   * Decodes a base64url-encoded cryptographic key to a byte array.
    * @private
-   * @param keyB64 - The base64-encoded key string
+   * @param keyB64Url - The base64url-encoded key string
    * @param keyType - The type of key (e.g., 'public', 'secret') for error messages
    * @returns The decoded key as a Uint8Array
-   * @throws {InvalidImportDataError} If the base64 string is malformed
+   * @throws {InvalidImportDataError} If the base64url string is malformed
    */
-  private decodeBase64Key(keyB64: string, keyType: string): Uint8Array {
+  private decodeBase64UrlKey(keyB64Url: string, keyType: string): Uint8Array {
     try {
-      return fromBase64(keyB64);
+      return fromBase64Url(keyB64Url);
     } catch {
-      throw new InvalidImportDataError(`Invalid base64 encoding in ${keyType} key`);
+      throw new InvalidImportDataError(`Invalid base64url encoding in ${keyType} key`);
     }
   }
 

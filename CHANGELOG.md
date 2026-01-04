@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-01-04
+
+### Changed
+
+- `listEmails()` now fetches full email content in a single API call (eliminates N+1 queries)
+- **BREAKING**: Export format now uses base64url encoding instead of base64 for keys
+- **BREAKING**: Renamed `secretKeyB64` to `secretKey` in `ExportedInboxData`
+- **BREAKING**: Removed `publicKeyB64` from export format; public key is now derived from secret key on import
+- Added `version` field to `ExportedInboxData` (currently version 1)
+- Public key derivation now uses correct offset (1152) within ML-KEM-768 secret key
+- Stricter base64url validation rejects forbidden characters (+, /, =)
+- Renamed `MLDSA65_PUBLIC_KEY_SIZE` to `MLDSA_PUBLIC_KEY_SIZE` for consistency
+
+### Added
+
+- `listEmailsMetadataOnly()` method for lightweight email listing without content
+- `IEmailMetadata` type for metadata-only email responses
+- `deleteInbox(emailAddress)` method for deleting a specific inbox by email address
+- Protocol version and algorithm suite validation during decryption
+- Export format version validation on import
+- Email address validation (must contain exactly one @)
+- Inbox hash validation
+- Server public key size validation (1952 bytes for ML-DSA-65)
+- Comprehensive cryptographic size constants for ML-KEM-768, ML-DSA-65, and AES-256-GCM
+- `EXPORT_VERSION` and `PROTOCOL_VERSION` constants
+
 ## [0.5.1] - 2025-12-31
 
 ### Changed

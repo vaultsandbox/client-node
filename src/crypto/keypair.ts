@@ -6,16 +6,11 @@ import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 import { toBase64Url, fromBase64Url, ensureOwnBuffer, concatBuffers } from './utils.js';
 import type { Keypair } from '../types/index.js';
 import { DecryptionError } from '../types/index.js';
+import { MLKEM_PUBLIC_KEY_SIZE, MLKEM_SECRET_KEY_SIZE, MLKEM_PUBLIC_KEY_OFFSET } from './constants.js';
 
-/**
- * ML-KEM-768 public key size in bytes
- */
-export const PUBLIC_KEY_SIZE = 1184;
-
-/**
- * ML-KEM-768 secret key size in bytes
- */
-export const SECRET_KEY_SIZE = 2400;
+// Re-export for convenience
+export const PUBLIC_KEY_SIZE = MLKEM_PUBLIC_KEY_SIZE;
+export const SECRET_KEY_SIZE = MLKEM_SECRET_KEY_SIZE;
 
 /**
  * Generates a new ML-KEM-768 keypair for inbox encryption
@@ -122,7 +117,8 @@ export async function deriveKey(
 
 /**
  * Derives a public key from a secret key in ML-KEM (Kyber)
- * In ML-KEM, the public key is embedded in the secret key
+ * In ML-KEM, the public key is embedded in the secret key at offset 1152
+ * See vaultsandbox-spec.md Section 4.2
  *
  * @param secretKey - The secret key bytes
  * @returns The derived public key bytes
@@ -134,6 +130,7 @@ export function derivePublicKeyFromSecret(secretKey: Uint8Array): Uint8Array {
     );
   }
 
-  // In ML-KEM, the public key is appended to the secret key
-  return secretKey.slice(secretKey.length - PUBLIC_KEY_SIZE);
+  // In ML-KEM, the public key is at offset MLKEM_PUBLIC_KEY_OFFSET (1152)
+  // sk[1152:2400] contains the 1184-byte public key
+  return secretKey.slice(MLKEM_PUBLIC_KEY_OFFSET, MLKEM_PUBLIC_KEY_OFFSET + PUBLIC_KEY_SIZE);
 }

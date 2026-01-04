@@ -140,14 +140,15 @@ describe('Crypto Mocked Logic', () => {
   });
 
   describe('signature', () => {
+    // Use correct sizes per spec Appendix B
     const validEncryptedData = {
       v: 1,
-      ct_kem: toBase64Url(new Uint8Array(32)),
-      nonce: toBase64Url(new Uint8Array(12)),
+      ct_kem: toBase64Url(new Uint8Array(1088)), // MLKEM_CIPHERTEXT_SIZE
+      nonce: toBase64Url(new Uint8Array(12)), // AES_NONCE_SIZE
       aad: toBase64Url(new Uint8Array(10)),
       ciphertext: toBase64Url(new Uint8Array(100)),
-      sig: toBase64Url(new Uint8Array(100)),
-      server_sig_pk: toBase64Url(new Uint8Array(1952)),
+      sig: toBase64Url(new Uint8Array(3309)), // MLDSA_SIGNATURE_SIZE
+      server_sig_pk: toBase64Url(new Uint8Array(1952)), // MLDSA_PUBLIC_KEY_SIZE
       algs: {
         kem: 'ML-KEM-768',
         sig: 'ML-DSA-65',
@@ -224,14 +225,15 @@ describe('Crypto Mocked Logic', () => {
       publicKeyB64: 'pk',
     };
 
+    // Use correct sizes per spec Appendix B
     const validEncryptedData = {
       v: 1,
-      ct_kem: toBase64Url(new Uint8Array(32)),
-      nonce: toBase64Url(new Uint8Array(12)),
+      ct_kem: toBase64Url(new Uint8Array(1088)), // MLKEM_CIPHERTEXT_SIZE
+      nonce: toBase64Url(new Uint8Array(12)), // AES_NONCE_SIZE
       aad: toBase64Url(new Uint8Array(10)),
       ciphertext: toBase64Url(new Uint8Array(100)),
-      sig: toBase64Url(new Uint8Array(100)),
-      server_sig_pk: toBase64Url(new Uint8Array(1952)),
+      sig: toBase64Url(new Uint8Array(3309)), // MLDSA_SIGNATURE_SIZE
+      server_sig_pk: toBase64Url(new Uint8Array(1952)), // MLDSA_PUBLIC_KEY_SIZE
       algs: {
         kem: 'ML-KEM-768',
         sig: 'ML-DSA-65',

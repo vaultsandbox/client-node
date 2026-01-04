@@ -9,10 +9,72 @@ import { DecryptionError, SignatureVerificationError } from '../types/index.js';
 import type { Keypair, EncryptedData } from '../types/index.js';
 import { verifySignature } from './signature.js';
 import { deriveKey } from './keypair.js';
-import { HKDF_CONTEXT } from './constants.js';
+import {
+  HKDF_CONTEXT,
+  PROTOCOL_VERSION,
+  MLKEM_CIPHERTEXT_SIZE,
+  AES_NONCE_SIZE,
+  MLDSA_SIGNATURE_SIZE,
+  MLDSA_PUBLIC_KEY_SIZE,
+} from './constants.js';
+
+/**
+ * Validates the encrypted payload structure and sizes per spec Section 8.1
+ * @throws DecryptionError if validation fails
+ */
+function validatePayload(encryptedData: EncryptedData): void {
+  // Step 2: Validate version
+  if (encryptedData.v !== PROTOCOL_VERSION) {
+    throw new DecryptionError(`Unsupported protocol version: ${encryptedData.v}, expected ${PROTOCOL_VERSION}`);
+  }
+
+  // Step 3: Validate algorithms
+  const { algs } = encryptedData;
+  if (algs.kem !== 'ML-KEM-768') {
+    throw new DecryptionError(`Unsupported KEM algorithm: ${algs.kem}`);
+  }
+  if (algs.sig !== 'ML-DSA-65') {
+    throw new DecryptionError(`Unsupported signature algorithm: ${algs.sig}`);
+  }
+  if (algs.aead !== 'AES-256-GCM') {
+    throw new DecryptionError(`Unsupported AEAD algorithm: ${algs.aead}`);
+  }
+  if (algs.kdf !== 'HKDF-SHA-512') {
+    throw new DecryptionError(`Unsupported KDF algorithm: ${algs.kdf}`);
+  }
+
+  // Step 4: Validate decoded sizes (decode first, then check)
+  try {
+    const ctKem = fromBase64Url(encryptedData.ct_kem);
+    if (ctKem.length !== MLKEM_CIPHERTEXT_SIZE) {
+      throw new DecryptionError(`Invalid ct_kem size: expected ${MLKEM_CIPHERTEXT_SIZE}, got ${ctKem.length}`);
+    }
+
+    const nonce = fromBase64Url(encryptedData.nonce);
+    if (nonce.length !== AES_NONCE_SIZE) {
+      throw new DecryptionError(`Invalid nonce size: expected ${AES_NONCE_SIZE}, got ${nonce.length}`);
+    }
+
+    const sig = fromBase64Url(encryptedData.sig);
+    if (sig.length !== MLDSA_SIGNATURE_SIZE) {
+      throw new DecryptionError(`Invalid signature size: expected ${MLDSA_SIGNATURE_SIZE}, got ${sig.length}`);
+    }
+
+    const serverSigPk = fromBase64Url(encryptedData.server_sig_pk);
+    if (serverSigPk.length !== MLDSA_PUBLIC_KEY_SIZE) {
+      throw new DecryptionError(
+        `Invalid server public key size: expected ${MLDSA_PUBLIC_KEY_SIZE}, got ${serverSigPk.length}`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof DecryptionError) throw error;
+    throw new DecryptionError(`Failed to decode payload: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 /**
  * Decrypts an encrypted payload using the complete reference implementation flow
+ * See vaultsandbox-spec.md Section 8: Decryption Process
  *
  * @param encryptedData - The encrypted data from the server
  * @param keypair - The recipient's keypair
@@ -21,10 +83,13 @@ import { HKDF_CONTEXT } from './constants.js';
  */
 export async function decrypt(encryptedData: EncryptedData, keypair: Keypair): Promise<Uint8Array> {
   try {
-    // 0. SECURITY: Verify signature BEFORE decryption (prevent tampering)
+    // Steps 1-4: Parse and validate payload (version, algorithms, sizes)
+    validatePayload(encryptedData);
+
+    // Step 6: SECURITY: Verify signature BEFORE decryption (prevent tampering)
     verifySignature(encryptedData);
 
-    // 1. Decode all components
+    // Step 7-9: Decode, decapsulate, derive key, decrypt
     const ctKem = fromBase64Url(encryptedData.ct_kem);
     const nonceBytes = fromBase64Url(encryptedData.nonce);
     const aadBytes = fromBase64Url(encryptedData.aad);
