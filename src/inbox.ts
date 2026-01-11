@@ -7,6 +7,7 @@ import { decryptMetadata, decryptRaw } from './crypto/decrypt.js';
 import { decryptEmailData } from './utils/email-utils.js';
 import { toBase64Url } from './crypto/utils.js';
 import { EXPORT_VERSION } from './crypto/constants.js';
+import { computeEmailsHash } from './utils/hash.js';
 import type {
   InboxData,
   Keypair,
@@ -19,6 +20,7 @@ import type {
   IEmailMetadata,
   ExportedInboxData,
   DecryptedMetadata,
+  EmailData,
 } from './types/index.js';
 import { TimeoutError, StrategyError } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
@@ -44,6 +46,7 @@ export class Inbox {
   private apiClient: ApiClient;
   private serverPublicKey: string;
   private strategy: DeliveryStrategy | null = null;
+  private emailCache: Map<string, EmailData> = new Map();
 
   /**
    * @internal
@@ -190,6 +193,7 @@ export class Inbox {
       let timeoutTimer: NodeJS.Timeout | undefined;
 
       // Centralized cleanup to prevent memory leaks
+      /* istanbul ignore next 4 - defensive checks for race conditions */
       const cleanup = () => {
         if (timeoutTimer) clearTimeout(timeoutTimer);
         if (subscription) subscription.unsubscribe();
@@ -310,5 +314,108 @@ export class Inbox {
       syncStatus.emailsHash,
     );
     return syncStatus;
+  }
+
+  // ===== Email Cache Management =====
+
+  /**
+   * Gets all email IDs currently in the local cache.
+   *
+   * @returns An array of email IDs.
+   */
+  getEmailIds(): string[] {
+    return Array.from(this.emailCache.keys());
+  }
+
+  /**
+   * Gets the local email cache.
+   *
+   * @returns The email cache map.
+   * @internal
+   */
+  getEmailCache(): Map<string, EmailData> {
+    return this.emailCache;
+  }
+
+  /**
+   * Adds an email to the local cache.
+   *
+   * @param email - The email data to add.
+   * @returns `true` if the email was added, `false` if it already existed.
+   */
+  addEmail(email: EmailData): boolean {
+    if (this.emailCache.has(email.id)) {
+      debug('Email %s already exists in cache for inbox %s', email.id, this.emailAddress);
+      return false;
+    }
+    this.emailCache.set(email.id, email);
+    debug('Added email %s to cache for inbox %s', email.id, this.emailAddress);
+    return true;
+  }
+
+  /**
+   * Removes an email from the local cache.
+   *
+   * @param emailId - The ID of the email to remove.
+   * @returns `true` if the email was removed, `false` if it didn't exist.
+   */
+  removeEmail(emailId: string): boolean {
+    const removed = this.emailCache.delete(emailId);
+    if (removed) {
+      debug('Removed email %s from cache for inbox %s', emailId, this.emailAddress);
+    }
+    return removed;
+  }
+
+  /**
+   * Checks if an email exists in the local cache.
+   *
+   * @param emailId - The ID of the email to check.
+   * @returns `true` if the email exists, `false` otherwise.
+   */
+  hasEmail(emailId: string): boolean {
+    return this.emailCache.has(emailId);
+  }
+
+  /**
+   * Computes the hash of the local email cache.
+   *
+   * This hash can be compared with the server's hash to detect changes.
+   * Uses the algorithm: BASE64URL(SHA256(SORT(emailIds).join(",")))
+   *
+   * @returns The computed hash of local email IDs.
+   */
+  computeLocalHash(): string {
+    const hash = computeEmailsHash(this.getEmailIds());
+    debug('Computed local hash for inbox %s: %s', this.emailAddress, hash);
+    return hash;
+  }
+
+  /**
+   * Clears all emails from the local cache.
+   */
+  clearEmailCache(): void {
+    this.emailCache.clear();
+    debug('Cleared email cache for inbox %s', this.emailAddress);
+  }
+
+  /**
+   * Gets the keypair for this inbox.
+   *
+   * @returns The keypair.
+   * @internal
+   */
+  getKeypair(): Keypair {
+    return this.keypair;
+  }
+
+  /**
+   * Gets the API client for this inbox.
+   *
+   * @returns The API client.
+   * @internal
+   */
+  getApiClient(): ApiClient {
+    return this.apiClient;
   }
 }

@@ -173,6 +173,7 @@ export class Email implements IEmail {
     this.apiClient = apiClient;
     this.keypair = keypair;
 
+    // istanbul ignore next -- this.to is always an array per line 166, else branch is defensive
     debug('Creating email %s from %s to %s', this.id, this.from, Array.isArray(this.to) ? this.to.join(', ') : this.to);
 
     // If parsed content is available, use it

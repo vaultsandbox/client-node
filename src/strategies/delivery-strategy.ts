@@ -1,4 +1,4 @@
-import type { IEmail, WaitOptions, Subscription, Keypair } from '../types/index.js';
+import type { IEmail, WaitOptions, Subscription, Keypair, EmailData } from '../types/index.js';
 
 /**
  * DeliveryStrategy defines the interface for email delivery mechanisms.
@@ -21,6 +21,8 @@ export interface DeliveryStrategy {
    * @param inboxHash - The inbox hash for SSE subscription
    * @param keypair - Keypair for decryption
    * @param callback - Function to call when new email arrives
+   * @param emailCache - Optional local email cache for sync operations
+   * @param onEmailDeleted - Optional callback when email is deleted from server
    * @returns Subscription object with unsubscribe method
    */
   subscribe(
@@ -28,6 +30,8 @@ export interface DeliveryStrategy {
     inboxHash: string,
     keypair: Keypair,
     callback: (email: IEmail) => void | Promise<void>,
+    emailCache?: Map<string, EmailData>,
+    onEmailDeleted?: (emailId: string) => void,
   ): Subscription;
 
   /**

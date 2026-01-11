@@ -68,7 +68,9 @@ function validatePayload(encryptedData: EncryptedData): void {
     }
   } catch (error) {
     if (error instanceof DecryptionError) throw error;
-    throw new DecryptionError(`Failed to decode payload: ${error instanceof Error ? error.message : String(error)}`);
+    /* istanbul ignore next - defensive for non-Error exceptions */
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DecryptionError(`Failed to decode payload: ${message}`);
   }
 }
 
@@ -140,7 +142,9 @@ export async function decrypt(encryptedData: EncryptedData, keypair: Keypair): P
     if (error instanceof DecryptionError) {
       throw error;
     }
-    throw new DecryptionError(`Decryption failed: ${error instanceof Error ? error.message : String(error)}`);
+    /* istanbul ignore next - defensive for non-Error exceptions */
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DecryptionError(`Decryption failed: ${message}`);
   }
 }
 
@@ -158,9 +162,9 @@ export async function decryptMetadata<T = unknown>(encryptedData: EncryptedData,
     const jsonString = new TextDecoder().decode(plaintext);
     return JSON.parse(jsonString) as T;
   } catch (error) {
-    throw new DecryptionError(
-      `Failed to parse decrypted metadata: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    /* istanbul ignore next - defensive for non-Error exceptions */
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DecryptionError(`Failed to parse decrypted metadata: ${message}`);
   }
 }
 
@@ -193,8 +197,8 @@ export async function decryptRaw(encryptedData: EncryptedData, keypair: Keypair)
     const rawEmailBytes = fromBase64(base64String);
     return new TextDecoder().decode(rawEmailBytes);
   } catch (error) {
-    throw new DecryptionError(
-      `Failed to decode decrypted raw email: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    /* istanbul ignore next - defensive for non-Error exceptions */
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DecryptionError(`Failed to decode decrypted raw email: ${message}`);
   }
 }

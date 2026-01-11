@@ -290,7 +290,7 @@ new VaultSandboxClient(config: ClientConfig)
 
 - `url: string` - Gateway URL
 - `apiKey: string` - Your API key
-- `strategy?: 'sse' | 'polling' | 'auto'` - Delivery strategy (default: 'auto')
+- `strategy?: 'sse' | 'polling'` - Delivery strategy (default: 'sse')
 - `pollingInterval?: number` - Polling interval in ms (default: 2000)
 - `maxRetries?: number` - Max retry attempts for HTTP requests (default: 3)
 - `retryDelay?: number` - Delay in ms between retry attempts (default: 1000)

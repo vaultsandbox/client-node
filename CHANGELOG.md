@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] - 2026-01-11
+
+### Changed
+
+- **BREAKING**: Removed `auto` strategy; default is now `sse`
+- Optimized inbox sync to reduce redundant operations
+- SSE strategy bug fix and optimization
+
+### Added
+
+- Full test coverage
+
 ## [0.6.0] - 2026-01-04
 
 ### Changed

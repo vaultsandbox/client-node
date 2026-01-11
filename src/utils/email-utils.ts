@@ -71,6 +71,7 @@ export function findMatchingEmail(emails: IEmail[], options: WaitOptions): IEmai
 export function matchesFilters(email: IEmail, options: WaitOptions): boolean {
   // Check subject filter
   if (options.subject) {
+    /* istanbul ignore else - defensive check for non-TypeScript callers */
     if (typeof options.subject === 'string') {
       if (!email.subject.includes(options.subject)) {
         return false;
@@ -84,6 +85,7 @@ export function matchesFilters(email: IEmail, options: WaitOptions): boolean {
 
   // Check from filter
   if (options.from) {
+    /* istanbul ignore else - defensive check for non-TypeScript callers */
     if (typeof options.from === 'string') {
       if (!email.from.includes(options.from)) {
         return false;

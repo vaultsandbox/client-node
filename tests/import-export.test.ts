@@ -284,6 +284,81 @@ describeIntegration('Inbox Import/Export Tests', () => {
       await expect(clientB.importInbox(invalidData)).rejects.toThrow('Server public key mismatch');
       await clientB.close();
     });
+
+    it('should throw InvalidImportDataError for invalid email address format (no @)', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      const invalidData = { ...exportedData, emailAddress: 'invalid-email-no-at' };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('must contain exactly one @ character');
+      await clientB.close();
+    });
+
+    it('should throw InvalidImportDataError for invalid email address format (multiple @)', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      const invalidData = { ...exportedData, emailAddress: 'test@@example.com' };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('must contain exactly one @ character');
+      await clientB.close();
+    });
+
+    it('should throw InvalidImportDataError for server public key with wrong size', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      // Create a valid base64url string but with wrong size (100 bytes instead of 1952)
+      const wrongSizeKey = Buffer.from(new Uint8Array(100).fill(0xaa))
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+      const invalidData = { ...exportedData, serverSigPk: wrongSizeKey };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('Invalid server public key size');
+      await clientB.close();
+    });
+
+    it('should throw InvalidImportDataError for server public key with invalid base64url encoding', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      // Use invalid base64url characters (+, /, or =)
+      const invalidData = { ...exportedData, serverSigPk: 'invalid+slash/equals=' };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('Invalid server public key encoding');
+      await clientB.close();
+    });
   });
 
   describe('File I/O', () => {

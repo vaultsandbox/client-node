@@ -9,7 +9,7 @@
 import * as utils from '../src/crypto/utils';
 import { toBase64Url, toBase64 } from '../src/crypto/utils';
 import { validateServerPublicKey, verifySignatureSafe, verifySignature } from '../src/crypto/signature';
-import { validateKeypair, generateKeypair } from '../src/crypto/keypair';
+import { validateKeypair, generateKeypair, derivePublicKeyFromSecret } from '../src/crypto/keypair';
 import { decrypt, decryptMetadata, decryptParsed, decryptRaw } from '../src/crypto/decrypt';
 import { DecryptionError, SignatureVerificationError } from '../src/types';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
@@ -123,6 +123,44 @@ describe('Crypto Mocked Logic', () => {
 
         expect(validateKeypair(kp)).toBe(false);
         spy.mockRestore();
+      });
+
+      it('should return false if decoded bytes do not match publicKey bytes', () => {
+        const pk = new Uint8Array(1184).fill(1);
+        const sk = new Uint8Array(2400).fill(2);
+        // Create a different byte array with same length
+        const differentPk = new Uint8Array(1184).fill(9);
+        const kp = {
+          publicKey: pk,
+          secretKey: sk,
+          publicKeyB64: toBase64Url(differentPk), // Encodes a different array
+        };
+        expect(validateKeypair(kp)).toBe(false);
+      });
+    });
+
+    describe('derivePublicKeyFromSecret', () => {
+      it('should throw DecryptionError for invalid secret key length', () => {
+        const invalidSecretKey = new Uint8Array(100); // Wrong size
+        expect(() => derivePublicKeyFromSecret(invalidSecretKey)).toThrow(DecryptionError);
+        expect(() => derivePublicKeyFromSecret(invalidSecretKey)).toThrow(
+          /Cannot derive public key: secret key has invalid length/,
+        );
+      });
+
+      it('should extract public key from valid secret key', () => {
+        // Create a mock secret key with known pattern
+        const secretKey = new Uint8Array(2400);
+        // Put recognizable pattern at the public key offset (1152-2336)
+        for (let i = 0; i < 1184; i++) {
+          secretKey[1152 + i] = i % 256;
+        }
+        const publicKey = derivePublicKeyFromSecret(secretKey);
+        expect(publicKey.length).toBe(1184);
+        // Verify the pattern was extracted correctly
+        expect(publicKey[0]).toBe(0);
+        expect(publicKey[1]).toBe(1);
+        expect(publicKey[255]).toBe(255);
       });
     });
 
@@ -251,6 +289,71 @@ describe('Crypto Mocked Logic', () => {
       mockDigest.mockResolvedValue(new ArrayBuffer(32)); // SHA-256 produces 32 bytes
     });
 
+    describe('payload validation', () => {
+      it('should throw DecryptionError for unsupported protocol version', async () => {
+        const invalidData = { ...validEncryptedData, v: 99 };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Unsupported protocol version: 99/);
+      });
+
+      it('should throw DecryptionError for unsupported KEM algorithm', async () => {
+        const invalidData = { ...validEncryptedData, algs: { ...validEncryptedData.algs, kem: 'BAD-KEM' } };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Unsupported KEM algorithm: BAD-KEM/);
+      });
+
+      it('should throw DecryptionError for unsupported signature algorithm', async () => {
+        const invalidData = { ...validEncryptedData, algs: { ...validEncryptedData.algs, sig: 'BAD-SIG' } };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Unsupported signature algorithm: BAD-SIG/);
+      });
+
+      it('should throw DecryptionError for unsupported AEAD algorithm', async () => {
+        const invalidData = { ...validEncryptedData, algs: { ...validEncryptedData.algs, aead: 'BAD-AEAD' } };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Unsupported AEAD algorithm: BAD-AEAD/);
+      });
+
+      it('should throw DecryptionError for unsupported KDF algorithm', async () => {
+        const invalidData = { ...validEncryptedData, algs: { ...validEncryptedData.algs, kdf: 'BAD-KDF' } };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Unsupported KDF algorithm: BAD-KDF/);
+      });
+
+      it('should throw DecryptionError for invalid ct_kem size', async () => {
+        const invalidData = { ...validEncryptedData, ct_kem: toBase64Url(new Uint8Array(100)) };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Invalid ct_kem size/);
+      });
+
+      it('should throw DecryptionError for invalid nonce size', async () => {
+        const invalidData = { ...validEncryptedData, nonce: toBase64Url(new Uint8Array(5)) };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Invalid nonce size/);
+      });
+
+      it('should throw DecryptionError for invalid signature size', async () => {
+        const invalidData = { ...validEncryptedData, sig: toBase64Url(new Uint8Array(100)) };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Invalid signature size/);
+      });
+
+      it('should throw DecryptionError for invalid server public key size', async () => {
+        const invalidData = { ...validEncryptedData, server_sig_pk: toBase64Url(new Uint8Array(100)) };
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(invalidData, mockKeypair)).rejects.toThrow(/Invalid server public key size/);
+      });
+
+      it('should throw DecryptionError if payload decode fails', async () => {
+        const spy = jest.spyOn(utils, 'fromBase64Url').mockImplementation(() => {
+          throw new Error('Decode failed');
+        });
+        await expect(decrypt(validEncryptedData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decrypt(validEncryptedData, mockKeypair)).rejects.toThrow(/Failed to decode payload/);
+        spy.mockRestore();
+      });
+    });
+
     it('should decrypt successfully', async () => {
       const result = await decrypt(validEncryptedData, mockKeypair);
       expect(result).toBeInstanceOf(Uint8Array);
@@ -312,6 +415,21 @@ describe('Crypto Mocked Logic', () => {
 
         const result = await decryptRaw(validEncryptedData, mockKeypair);
         expect(result).toBe(rawContent);
+      });
+
+      it('should throw DecryptionError if base64 decode fails', async () => {
+        // Return invalid base64 that will fail decoding
+        mockDecrypt.mockResolvedValue(new TextEncoder().encode('!!!invalid-base64!!!').buffer);
+
+        const spy = jest.spyOn(utils, 'fromBase64').mockImplementation(() => {
+          throw new Error('Invalid base64');
+        });
+
+        await expect(decryptRaw(validEncryptedData, mockKeypair)).rejects.toThrow(DecryptionError);
+        await expect(decryptRaw(validEncryptedData, mockKeypair)).rejects.toThrow(
+          /Failed to decode decrypted raw email/,
+        );
+        spy.mockRestore();
       });
     });
   });

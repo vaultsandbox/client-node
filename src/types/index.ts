@@ -14,11 +14,10 @@ export interface ClientConfig {
   apiKey: string;
   /**
    * The email delivery strategy to use.
-   * - `sse`: Use Server-Sent Events for real-time updates.
+   * - `sse`: Use Server-Sent Events for real-time updates (default).
    * - `polling`: Use traditional polling.
-   * - `auto`: Use SSE if available, otherwise fall back to polling (default).
    */
-  strategy?: 'sse' | 'polling' | 'auto';
+  strategy?: 'sse' | 'polling';
   /** The base interval for polling in milliseconds (default: 2000). */
   pollingInterval?: number;
   /** The maximum number of retries for failed HTTP requests (default: 3). */

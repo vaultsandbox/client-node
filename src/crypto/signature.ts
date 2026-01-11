@@ -84,9 +84,9 @@ export function verifySignature(encryptedData: EncryptedData): boolean {
     if (error instanceof SignatureVerificationError) {
       throw error;
     }
-    throw new SignatureVerificationError(
-      `Signature verification error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    /* istanbul ignore next - defensive for non-Error exceptions */
+    const message = error instanceof Error ? error.message : String(error);
+    throw new SignatureVerificationError(`Signature verification error: ${message}`);
   }
 }
 

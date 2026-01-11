@@ -774,6 +774,98 @@ describe('SSEStrategy Edge Cases', () => {
   });
 });
 
+describe('ApiClient createInbox with emailAddress', () => {
+  let mockAxiosInstance: {
+    get: jest.Mock;
+    post: jest.Mock;
+    delete: jest.Mock;
+    patch: jest.Mock;
+    interceptors: {
+      response: {
+        use: jest.Mock;
+      };
+    };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockAxiosInstance = {
+      get: jest.fn(),
+      post: jest.fn(),
+      delete: jest.fn(),
+      patch: jest.fn(),
+      interceptors: {
+        response: {
+          use: jest.fn(),
+        },
+      },
+    };
+
+    mockedAxios.create.mockReturnValue(mockAxiosInstance as unknown as ReturnType<typeof axios.create>);
+  });
+
+  it('should include emailAddress in payload when provided', async () => {
+    const client = new ApiClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    const mockInboxData = {
+      inboxHash: 'test-hash',
+      emailAddress: 'custom@example.com',
+      expiresAt: new Date().toISOString(),
+    };
+
+    mockAxiosInstance.post.mockResolvedValue({ data: mockInboxData });
+
+    const result = await client.createInbox('test-public-key', 3600, 'custom@example.com');
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+      clientKemPk: 'test-public-key',
+      ttl: 3600,
+      emailAddress: 'custom@example.com',
+    });
+    expect(result).toEqual(mockInboxData);
+  });
+
+  it('should include emailAddress without ttl when ttl is undefined', async () => {
+    const client = new ApiClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    const mockInboxData = {
+      inboxHash: 'test-hash',
+      emailAddress: 'custom@example.com',
+      expiresAt: new Date().toISOString(),
+    };
+
+    mockAxiosInstance.post.mockResolvedValue({ data: mockInboxData });
+
+    const result = await client.createInbox('test-public-key', undefined, 'custom@example.com');
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+      clientKemPk: 'test-public-key',
+      emailAddress: 'custom@example.com',
+    });
+    expect(result).toEqual(mockInboxData);
+  });
+
+  it('should call listEmails with includeContent=true', async () => {
+    const client = new ApiClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    mockAxiosInstance.get.mockResolvedValue({ data: [] });
+
+    await client.listEmails('test@example.com', true);
+
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/inboxes/test%40example.com/emails?includeContent=true');
+  });
+});
+
 describe('ApiClient with Default Configuration', () => {
   let mockAxiosInstance: {
     get: jest.Mock;

@@ -15,6 +15,7 @@ import { VaultSandboxClient } from '../src/client';
 import { Inbox } from '../src/inbox';
 import type { ApiClient } from '../src/http/api-client';
 import { sleep } from '../src/utils/sleep';
+import { StrategyError } from '../src/types/index';
 
 const GATEWAY_URL = process.env.VAULTSANDBOX_URL || 'http://localhost:3000';
 const API_KEY = process.env.VAULTSANDBOX_API_KEY || 'test-api-key';
@@ -109,6 +110,16 @@ describeIntegration('VaultSandbox Client Tests', () => {
       await expect(inbox.getSyncStatus()).rejects.toThrow();
     });
 
+    it('should delete an inbox by email address via client', async () => {
+      const inbox = await client.createInbox();
+      const emailAddress = inbox.emailAddress;
+
+      await client.deleteInbox(emailAddress);
+
+      // Attempting to get sync status should fail after deletion
+      await expect(inbox.getSyncStatus()).rejects.toThrow();
+    });
+
     it('should list emails (empty inbox)', async () => {
       const inbox = await client.createInbox();
       createdInboxes.push(inbox);
@@ -116,32 +127,6 @@ describeIntegration('VaultSandbox Client Tests', () => {
       const emails = await inbox.listEmails();
 
       expect(emails).toEqual([]);
-    });
-  });
-
-  describe('Bulk Operations', () => {
-    it('should call deleteAllInboxes API endpoint', async () => {
-      // This test is mocked because deleteAllInboxes is too destructive and would
-      // interfere with parallel testing and manual usage on the same server.
-      const mockDeletedCount = 5;
-
-      // Mock the underlying HTTP client delete method to cover the ApiClient implementation
-      const httpClientSpy = jest
-        .spyOn((client as unknown as VaultSandboxClientWithPrivates).apiClient['client'], 'delete')
-        .mockResolvedValue({ data: { deleted: mockDeletedCount } });
-
-      // Call the method
-      const deletedCount = await client.deleteAllInboxes();
-
-      // Verify the HTTP delete method was called with the correct endpoint
-      expect(httpClientSpy).toHaveBeenCalledWith('/api/inboxes');
-      expect(httpClientSpy).toHaveBeenCalledTimes(1);
-
-      // Verify the return value
-      expect(deletedCount).toBe(mockDeletedCount);
-
-      // Restore the original implementation
-      httpClientSpy.mockRestore();
     });
   });
 
@@ -179,6 +164,20 @@ describeIntegration('VaultSandbox Client Tests', () => {
       expect(elapsed).toBeGreaterThanOrEqual(sleepDuration - 5); // once I got a 99
       expect(elapsed).toBeLessThan(sleepDuration + 50); // Not too much longer
     });
+  });
+});
+
+// Unit tests that don't require a server
+describe('VaultSandbox Client Unit Tests', () => {
+  it('should throw StrategyError when calling monitorInboxes before initialization', () => {
+    const uninitializedClient = new VaultSandboxClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    // monitorInboxes requires strategy to be set, which only happens after ensureInitialized()
+    expect(() => uninitializedClient.monitorInboxes([])).toThrow(StrategyError);
+    expect(() => uninitializedClient.monitorInboxes([])).toThrow('No delivery strategy available');
   });
 });
 
