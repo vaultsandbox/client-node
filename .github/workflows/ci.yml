@@ -33,6 +33,11 @@ jobs:
 
       - name: Run unit tests
         run: npm test -- --testPathIgnorePatterns=email-flow --testPathIgnorePatterns=import-export --testPathIgnorePatterns=sse --testPathIgnorePatterns=polling --testPathIgnorePatterns=monitor
+        env:
+          VAULTSANDBOX_URL: ${{ vars.VAULTSANDBOX_URL }}
+          VAULTSANDBOX_API_KEY: ${{ secrets.VAULTSANDBOX_API_KEY }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
 
   coverage:
     runs-on: ubuntu-latest
