@@ -18,7 +18,7 @@ interface TestEmailAuth {
   spf?: 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'temperror' | 'permerror';
   dkim?: 'pass' | 'fail' | 'none';
   dmarc?: 'pass' | 'fail' | 'none';
-  reverseDns?: boolean;
+  reverseDns?: 'pass' | 'fail' | 'none';
 }
 
 interface TestEmailRequest {
@@ -139,19 +139,19 @@ describeAuthTests('Auth Results E2E', () => {
       expect(email.authResults.dmarc?.aligned).toBe(true);
     }, 20000);
 
-    it('parses ReverseDNS verified field correctly', async () => {
+    it('parses ReverseDNS result field correctly', async () => {
       const inbox = await createInbox();
 
       await createTestEmail({
         to: inbox.emailAddress,
         subject: 'ReverseDNS Test',
-        auth: { reverseDns: true },
+        auth: { reverseDns: 'pass' },
       });
 
       const email = await inbox.waitForEmail({ subject: /ReverseDNS Test/, timeout: 15000 });
 
       expect(email.authResults.reverseDns).toBeDefined();
-      expect(email.authResults.reverseDns?.verified).toBe(true);
+      expect(email.authResults.reverseDns?.result).toBe('pass');
       expect(email.authResults.reverseDns?.ip).toBeDefined();
       expect(email.authResults.reverseDns?.hostname).toBeDefined();
     }, 20000);
@@ -168,7 +168,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'pass',
           dkim: 'pass',
           dmarc: 'pass',
-          reverseDns: true,
+          reverseDns: 'pass',
         },
       });
 
@@ -195,7 +195,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'fail',
           dkim: 'pass',
           dmarc: 'pass',
-          reverseDns: true,
+          reverseDns: 'pass',
         },
       });
 
@@ -221,7 +221,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'pass',
           dkim: 'fail',
           dmarc: 'pass',
-          reverseDns: true,
+          reverseDns: 'pass',
         },
       });
 
@@ -247,7 +247,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'pass',
           dkim: 'pass',
           dmarc: 'fail',
-          reverseDns: true,
+          reverseDns: 'pass',
         },
       });
 
@@ -273,7 +273,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'pass',
           dkim: 'pass',
           dmarc: 'pass',
-          reverseDns: false,
+          reverseDns: 'fail',
         },
       });
 
@@ -299,7 +299,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'fail',
           dkim: 'fail',
           dmarc: 'fail',
-          reverseDns: false,
+          reverseDns: 'fail',
         },
       });
 
@@ -334,7 +334,7 @@ describeAuthTests('Auth Results E2E', () => {
             spf: spfResult,
             dkim: 'pass',
             dmarc: 'pass',
-            reverseDns: true,
+            reverseDns: 'pass',
           },
         });
 
@@ -365,7 +365,7 @@ describeAuthTests('Auth Results E2E', () => {
           spf: 'pass',
           dkim: 'pass',
           dmarc: 'pass',
-          reverseDns: true,
+          reverseDns: 'pass',
         },
       });
 

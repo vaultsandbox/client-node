@@ -15,7 +15,7 @@ import { VaultSandboxClient } from '../src/client';
 import { Inbox } from '../src/inbox';
 import type { ApiClient } from '../src/http/api-client';
 import { sleep } from '../src/utils/sleep';
-import { StrategyError } from '../src/types/index';
+import { StrategyError, ApiError, InboxAlreadyExistsError } from '../src/types/index';
 
 const GATEWAY_URL = process.env.VAULTSANDBOX_URL || 'http://localhost:3000';
 const API_KEY = process.env.VAULTSANDBOX_API_KEY || 'test-api-key';
@@ -178,6 +178,58 @@ describe('VaultSandbox Client Unit Tests', () => {
     // monitorInboxes requires strategy to be set, which only happens after ensureInitialized()
     expect(() => uninitializedClient.monitorInboxes([])).toThrow(StrategyError);
     expect(() => uninitializedClient.monitorInboxes([])).toThrow('No delivery strategy available');
+  });
+
+  it('should throw InboxAlreadyExistsError when createInbox receives 409 conflict', async () => {
+    const client = new VaultSandboxClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    // Mock ensureInitialized by setting private properties
+    const clientWithPrivates = client as unknown as {
+      serverPublicKey: string;
+      encryptionPolicy: string;
+      strategy: unknown;
+      apiClient: ApiClient;
+    };
+
+    clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+    clientWithPrivates.encryptionPolicy = 'enabled';
+    clientWithPrivates.strategy = { close: jest.fn() };
+
+    // Mock apiClient.createInbox to throw ApiError with 409
+    clientWithPrivates.apiClient.createInbox = jest.fn().mockRejectedValue(new ApiError(409, 'Inbox already exists'));
+
+    await expect(client.createInbox({ emailAddress: 'test@example.com' })).rejects.toThrow(InboxAlreadyExistsError);
+    await expect(client.createInbox({ emailAddress: 'test@example.com' })).rejects.toThrow(
+      'Inbox already exists: test@example.com',
+    );
+  });
+
+  it('should re-throw non-409 ApiErrors from createInbox', async () => {
+    const client = new VaultSandboxClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    // Mock ensureInitialized by setting private properties
+    const clientWithPrivates = client as unknown as {
+      serverPublicKey: string;
+      encryptionPolicy: string;
+      strategy: unknown;
+      apiClient: ApiClient;
+    };
+
+    clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+    clientWithPrivates.encryptionPolicy = 'enabled';
+    clientWithPrivates.strategy = { close: jest.fn() };
+
+    // Mock apiClient.createInbox to throw ApiError with 500
+    clientWithPrivates.apiClient.createInbox = jest.fn().mockRejectedValue(new ApiError(500, 'Internal server error'));
+
+    await expect(client.createInbox()).rejects.toThrow(ApiError);
+    await expect(client.createInbox()).rejects.toThrow('Internal server error');
   });
 });
 

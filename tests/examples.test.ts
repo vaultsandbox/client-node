@@ -121,13 +121,13 @@ describeExamples('README Examples', () => {
     );
 
     if (email.authResults.spf?.result) {
-      expect(email.authResults.spf.result).toMatch(/pass|fail|softfail|neutral|temperror|permerror/);
+      expect(email.authResults.spf.result).toMatch(/pass|fail|softfail|neutral|none|temperror|permerror|skipped/);
     }
     if (email.authResults.dkim) {
       expect(email.authResults.dkim.length).toBeGreaterThan(0);
     }
     if (email.authResults.dmarc?.result) {
-      expect(email.authResults.dmarc.result).toMatch(/pass|fail|neutral|temperror|permerror/);
+      expect(email.authResults.dmarc.result).toMatch(/pass|fail|none|skipped/);
     }
   }, 30000);
 

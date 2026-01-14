@@ -42,6 +42,10 @@ export interface CreateInboxOptions {
   ttl?: number;
   /** A specific email address to request for the inbox. */
   emailAddress?: string;
+  /** Enable or disable email authentication checks (SPF, DKIM, DMARC, PTR). Omit to use server default. */
+  emailAuth?: boolean;
+  /** Request encrypted or plain inbox. Omit to use server default based on encryptionPolicy. */
+  encryption?: 'encrypted' | 'plain';
 }
 
 /**
@@ -62,11 +66,14 @@ export interface ExportedInboxData {
   /** Unique hash identifier for the inbox */
   inboxHash: string;
 
-  /** Server's ML-DSA-65 public key (base64url encoded, 1952 bytes decoded) */
-  serverSigPk: string;
+  /** Whether this inbox uses encryption. */
+  encrypted: boolean;
 
-  /** ML-KEM-768 secret key (base64url encoded, 2400 bytes decoded) */
-  secretKey: string;
+  /** Server's ML-DSA-65 public key (base64url encoded, 1952 bytes decoded). Only present for encrypted inboxes. */
+  serverSigPk?: string;
+
+  /** ML-KEM-768 secret key (base64url encoded, 2400 bytes decoded). Only present for encrypted inboxes. */
+  secretKey?: string;
 
   /** ISO 8601 timestamp when the export was created */
   exportedAt: string;
@@ -84,8 +91,12 @@ export interface InboxData {
   expiresAt: string;
   /** Base64URL-encoded SHA-256 hash of the client KEM public key, used for SSE subscriptions and API references. */
   inboxHash: string;
-  /** Base64URL-encoded server signing public key for verifying server signatures. */
-  serverSigPk: string;
+  /** Whether this inbox uses encryption. */
+  encrypted: boolean;
+  /** Base64URL-encoded server signing public key for verifying server signatures. Only present for encrypted inboxes. */
+  serverSigPk?: string;
+  /** Whether email authentication checks (SPF, DKIM, DMARC, PTR) are enabled for this inbox. */
+  emailAuth?: boolean;
 }
 
 /**
@@ -125,10 +136,10 @@ export interface WaitForCountOptions {
 }
 
 /**
- * Raw email data returned from the API.
+ * Encrypted email data returned from the API.
  * @internal
  */
-export interface EmailData {
+export interface EncryptedEmailData {
   id: string;
   inboxId: string;
   receivedAt: string;
@@ -136,6 +147,28 @@ export interface EmailData {
   encryptedMetadata: EncryptedData;
   encryptedParsed?: EncryptedData;
 }
+
+/**
+ * Plain (unencrypted) email data returned from the API.
+ * @internal
+ */
+export interface PlainEmailData {
+  id: string;
+  inboxId: string;
+  receivedAt: string;
+  isRead: boolean;
+  /** Base64-encoded JSON metadata */
+  metadata: string;
+  /** Base64-encoded JSON parsed content */
+  parsed?: string;
+}
+
+/**
+ * Raw email data returned from the API (encrypted or plain).
+ * Use `isEncryptedEmailData()` type guard to discriminate.
+ * @internal
+ */
+export type EmailData = EncryptedEmailData | PlainEmailData;
 
 /**
  * The structure of encrypted data returned from the server.
@@ -212,11 +245,15 @@ export interface RawEmail {
 }
 
 /**
+ * Raw email data from the API (encrypted or plain).
  * @internal
  */
 export interface RawEmailData {
   id: string;
-  encryptedRaw: EncryptedData;
+  /** Encrypted raw email content. Present for encrypted inboxes. */
+  encryptedRaw?: EncryptedData;
+  /** Base64-encoded raw email content. Present for plain inboxes. */
+  raw?: string;
 }
 
 // ===== Authentication Results =====
@@ -225,7 +262,7 @@ export interface RawEmailData {
  * The result of an SPF (Sender Policy Framework) validation check.
  */
 export interface SPFResult {
-  result: 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'temperror' | 'permerror';
+  result: 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'temperror' | 'permerror' | 'skipped';
   domain?: string;
   ip?: string;
   details?: string;
@@ -235,7 +272,7 @@ export interface SPFResult {
  * The result of a DKIM (DomainKeys Identified Mail) validation check.
  */
 export interface DKIMResult {
-  result: 'pass' | 'fail' | 'none';
+  result: 'pass' | 'fail' | 'none' | 'skipped';
   domain?: string;
   selector?: string;
   signature?: string;
@@ -245,7 +282,7 @@ export interface DKIMResult {
  * The result of a DMARC (Domain-based Message Authentication, Reporting, and Conformance) validation check.
  */
 export interface DMARCResult {
-  result: 'pass' | 'fail' | 'none';
+  result: 'pass' | 'fail' | 'none' | 'skipped';
   policy?: 'none' | 'quarantine' | 'reject';
   aligned?: boolean;
   domain?: string;
@@ -255,7 +292,7 @@ export interface DMARCResult {
  * The result of a reverse DNS validation check.
  */
 export interface ReverseDNSResult {
-  verified: boolean;
+  result: 'pass' | 'fail' | 'none' | 'skipped';
   ip?: string;
   hostname?: string;
 }
@@ -334,11 +371,22 @@ export interface AuthResults extends AuthResultsData {
 // ===== Server Info =====
 
 /**
+ * The server's encryption policy for inboxes.
+ * - `always`: All inboxes are encrypted, no override allowed
+ * - `enabled`: Inboxes are encrypted by default, can request plain
+ * - `disabled`: Inboxes are plain by default, can request encrypted
+ * - `never`: All inboxes are plain, no override allowed
+ */
+export type EncryptionPolicy = 'always' | 'enabled' | 'disabled' | 'never';
+
+/**
  * Information about the VaultSandbox server.
  */
 export interface ServerInfo {
   /** Base64URL-encoded server signing public key for ML-DSA-65. */
   serverSigPk: string;
+  /** The server's encryption policy for inboxes. */
+  encryptionPolicy: EncryptionPolicy;
   /** Cryptographic algorithms supported by the server. */
   algs: {
     /** Key encapsulation mechanism algorithm (e.g., 'ML-KEM-768'). */
@@ -386,12 +434,16 @@ export interface SSEConfig {
 }
 
 /**
+ * SSE message data for new email notifications.
  * @internal
  */
 export interface SSEMessageData {
   inboxId: string;
   emailId: string;
-  encryptedMetadata: EncryptedData;
+  /** Encrypted metadata. Present for encrypted inboxes. */
+  encryptedMetadata?: EncryptedData;
+  /** Base64-encoded JSON metadata. Present for plain inboxes. */
+  metadata?: string;
 }
 
 // ===== Crypto Types =====

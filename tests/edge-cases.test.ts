@@ -350,6 +350,108 @@ describe('ApiClient Edge Cases', () => {
       expect(freshMockAxiosInstance.request).toHaveBeenCalled();
     });
   });
+
+  describe('createInbox with emailAuth', () => {
+    it('should include emailAuth in payload when explicitly set to true', async () => {
+      jest.clearAllMocks();
+
+      const mockInstance = {
+        get: jest.fn(),
+        post: jest.fn().mockResolvedValue({
+          data: {
+            emailAddress: 'test@example.com',
+            expiresAt: '2024-01-01T00:00:00Z',
+            inboxHash: 'hash123',
+            serverSigPk: 'pk123',
+            emailAuth: true,
+          },
+        }),
+        delete: jest.fn(),
+        patch: jest.fn(),
+        interceptors: { response: { use: jest.fn() } },
+      };
+
+      mockedAxios.create.mockReturnValue(mockInstance as unknown as ReturnType<typeof axios.create>);
+
+      const client = new ApiClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      await client.createInbox('publicKey123', undefined, undefined, true);
+
+      expect(mockInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+        clientKemPk: 'publicKey123',
+        emailAuth: true,
+      });
+    });
+
+    it('should include emailAuth in payload when explicitly set to false', async () => {
+      jest.clearAllMocks();
+
+      const mockInstance = {
+        get: jest.fn(),
+        post: jest.fn().mockResolvedValue({
+          data: {
+            emailAddress: 'test@example.com',
+            expiresAt: '2024-01-01T00:00:00Z',
+            inboxHash: 'hash123',
+            serverSigPk: 'pk123',
+            emailAuth: false,
+          },
+        }),
+        delete: jest.fn(),
+        patch: jest.fn(),
+        interceptors: { response: { use: jest.fn() } },
+      };
+
+      mockedAxios.create.mockReturnValue(mockInstance as unknown as ReturnType<typeof axios.create>);
+
+      const client = new ApiClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      await client.createInbox('publicKey123', undefined, undefined, false);
+
+      expect(mockInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+        clientKemPk: 'publicKey123',
+        emailAuth: false,
+      });
+    });
+
+    it('should omit emailAuth from payload when undefined', async () => {
+      jest.clearAllMocks();
+
+      const mockInstance = {
+        get: jest.fn(),
+        post: jest.fn().mockResolvedValue({
+          data: {
+            emailAddress: 'test@example.com',
+            expiresAt: '2024-01-01T00:00:00Z',
+            inboxHash: 'hash123',
+            serverSigPk: 'pk123',
+          },
+        }),
+        delete: jest.fn(),
+        patch: jest.fn(),
+        interceptors: { response: { use: jest.fn() } },
+      };
+
+      mockedAxios.create.mockReturnValue(mockInstance as unknown as ReturnType<typeof axios.create>);
+
+      const client = new ApiClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      await client.createInbox('publicKey123', undefined, undefined, undefined);
+
+      expect(mockInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+        clientKemPk: 'publicKey123',
+      });
+    });
+  });
 });
 
 describe('SSEStrategy Edge Cases', () => {
@@ -815,6 +917,8 @@ describe('ApiClient createInbox with emailAddress', () => {
       inboxHash: 'test-hash',
       emailAddress: 'custom@example.com',
       expiresAt: new Date().toISOString(),
+      encrypted: true,
+      serverSigPk: 'mock-server-sig-pk',
     };
 
     mockAxiosInstance.post.mockResolvedValue({ data: mockInboxData });
@@ -839,6 +943,8 @@ describe('ApiClient createInbox with emailAddress', () => {
       inboxHash: 'test-hash',
       emailAddress: 'custom@example.com',
       expiresAt: new Date().toISOString(),
+      encrypted: true,
+      serverSigPk: 'mock-server-sig-pk',
     };
 
     mockAxiosInstance.post.mockResolvedValue({ data: mockInboxData });

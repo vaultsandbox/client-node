@@ -68,31 +68,31 @@ class AuthResults implements IAuthResults {
     debug('Validating email authentication results');
     const failures: string[] = [];
 
-    // Check SPF
-    const spfPassed = this.spf?.result === 'pass';
+    // Check SPF (skipped is treated as passing - not a failure)
+    const spfPassed = this.spf?.result === 'pass' || this.spf?.result === 'skipped';
     if (this.spf && !spfPassed) {
       failures.push(`SPF check failed: ${this.spf.result}${this.spf.domain ? ` (domain: ${this.spf.domain})` : ''}`);
     }
 
-    // Check DKIM (at least one signature must pass)
-    const dkimPassed = this.dkim?.some((d) => d.result === 'pass') ?? false;
+    // Check DKIM (at least one signature must pass or be skipped)
+    const dkimPassed = this.dkim?.some((d) => d.result === 'pass' || d.result === 'skipped') ?? false;
     if (this.dkim && this.dkim.length > 0 && !dkimPassed) {
       const failedDomains = this.dkim
-        .filter((d) => d.result !== 'pass')
+        .filter((d) => d.result !== 'pass' && d.result !== 'skipped')
         .map((d) => d.domain)
         .filter(Boolean)
         .join(', ');
       failures.push(`DKIM signature failed${failedDomains ? `: ${failedDomains}` : ''}`);
     }
 
-    // Check DMARC
-    const dmarcPassed = this.dmarc?.result === 'pass';
+    // Check DMARC (skipped is treated as passing - not a failure)
+    const dmarcPassed = this.dmarc?.result === 'pass' || this.dmarc?.result === 'skipped';
     if (this.dmarc && !dmarcPassed) {
       failures.push(`DMARC policy: ${this.dmarc.result}${this.dmarc.policy ? ` (policy: ${this.dmarc.policy})` : ''}`);
     }
 
-    // Check Reverse DNS - uses "verified" boolean
-    const reverseDnsPassed = this.reverseDns?.verified === true;
+    // Check Reverse DNS (skipped is treated as passing - not a failure)
+    const reverseDnsPassed = this.reverseDns?.result === 'pass' || this.reverseDns?.result === 'skipped';
     if (this.reverseDns && !reverseDnsPassed) {
       failures.push(
         `Reverse DNS check failed${this.reverseDns.hostname ? ` (hostname: ${this.reverseDns.hostname})` : ''}`,
@@ -147,7 +147,7 @@ export class Email implements IEmail {
 
   private emailAddress: string;
   private apiClient: ApiClient;
-  private keypair: Keypair;
+  private keypair: Keypair | null;
 
   /**
    * @internal
@@ -159,7 +159,7 @@ export class Email implements IEmail {
     parsed: DecryptedParsed | null,
     emailAddress: string,
     apiClient: ApiClient,
-    keypair: Keypair,
+    keypair: Keypair | null,
   ) {
     this.id = emailData.id;
     this.from = metadata.from;
@@ -231,15 +231,27 @@ export class Email implements IEmail {
   }
 
   /**
-   * Fetches the raw, decrypted source of the email.
+   * Fetches the raw source of the email (decrypts if encrypted).
    *
    * @returns A promise that resolves to the raw email data.
    */
   async getRaw(): Promise<RawEmail> {
     debug('Fetching raw content for email %s', this.id);
     const rawEmailData = await this.apiClient.getRawEmail(this.emailAddress, this.id);
-    const raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair);
-    debug('Successfully fetched and decrypted raw content for email %s (%d characters)', this.id, raw.length);
+    let raw: string;
+
+    /* istanbul ignore else - defensive for invalid raw email response */
+    if (rawEmailData.encryptedRaw) {
+      // Encrypted inbox - decrypt the raw content
+      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair!);
+    } else if (rawEmailData.raw) {
+      // Plain inbox - decode base64
+      raw = Buffer.from(rawEmailData.raw, 'base64').toString('utf-8');
+    } else {
+      throw new Error('Invalid raw email data: neither encryptedRaw nor raw field present');
+    }
+
+    debug('Successfully fetched and processed raw content for email %s (%d characters)', this.id, raw.length);
     return { id: rawEmailData.id, raw };
   }
 }

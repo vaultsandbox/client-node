@@ -11,7 +11,7 @@
 [![npm version](https://img.shields.io/npm/v/@vaultsandbox/client.svg)](https://www.npmjs.com/package/@vaultsandbox/client)
 [![CI](https://github.com/vaultsandbox/client-node/actions/workflows/ci.yml/badge.svg)](https://github.com/vaultsandbox/client-node/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/vaultsandbox/client-node/graph/badge.svg)](https://codecov.io/gh/vaultsandbox/client-node)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
 
 **Production-like email testing. Self-hosted & secure.**
@@ -621,4 +621,4 @@ Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTIN
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](LICENSE) for details.

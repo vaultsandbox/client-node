@@ -137,20 +137,43 @@ export class ApiClient {
 
   /**
    * Creates a new temporary inbox on the server.
-   * @param publicKey - The client's KEM public key for encrypted communication
+   * @param publicKey - The client's KEM public key for encrypted communication (required for encrypted inboxes)
    * @param ttl - Optional time-to-live in seconds for the inbox
    * @param emailAddress - Optional desired email address or domain
+   * @param emailAuth - Optional flag to enable email authentication checks
+   * @param encryption - Optional encryption preference ('encrypted' or 'plain')
    * @returns Promise resolving to the created inbox data including email address
    * @throws {NetworkError} If network communication fails
    * @throws {ApiError} If the server returns an error response
    */
-  async createInbox(publicKey: string, ttl?: number, emailAddress?: string): Promise<InboxData> {
-    const payload: { clientKemPk: string; ttl?: number; emailAddress?: string } = { clientKemPk: publicKey };
+  async createInbox(
+    publicKey?: string,
+    ttl?: number,
+    emailAddress?: string,
+    emailAuth?: boolean,
+    encryption?: 'encrypted' | 'plain',
+  ): Promise<InboxData> {
+    const payload: {
+      clientKemPk?: string;
+      ttl?: number;
+      emailAddress?: string;
+      emailAuth?: boolean;
+      encryption?: 'encrypted' | 'plain';
+    } = {};
+    if (publicKey !== undefined && publicKey !== null) {
+      payload.clientKemPk = publicKey;
+    }
     if (ttl !== undefined && ttl !== null) {
       payload.ttl = ttl;
     }
     if (emailAddress !== undefined && emailAddress !== null) {
       payload.emailAddress = emailAddress;
+    }
+    if (emailAuth !== undefined) {
+      payload.emailAuth = emailAuth;
+    }
+    if (encryption !== undefined) {
+      payload.encryption = encryption;
     }
     const response = await this.client.post<InboxData>('/api/inboxes', payload);
     return response.data;

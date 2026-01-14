@@ -97,6 +97,9 @@ describe('PollingStrategy', () => {
 
     // Default mock for sleep - resolves immediately
     (sleepModule.sleep as jest.Mock).mockResolvedValue(undefined);
+
+    // Mock isEncryptedEmailData to return true for mock encrypted email data
+    (emailUtils.isEncryptedEmailData as unknown as jest.Mock).mockReturnValue(true);
   });
 
   describe('constructor', () => {

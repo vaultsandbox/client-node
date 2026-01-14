@@ -4,7 +4,7 @@
 
 import createDebug from 'debug';
 import { decryptMetadata, decryptRaw } from './crypto/decrypt.js';
-import { decryptEmailData } from './utils/email-utils.js';
+import { decryptEmailData, decodeBase64EmailData, isEncryptedEmailData } from './utils/email-utils.js';
 import { toBase64Url } from './crypto/utils.js';
 import { EXPORT_VERSION } from './crypto/constants.js';
 import { computeEmailsHash } from './utils/hash.js';
@@ -41,10 +41,14 @@ export class Inbox {
   expiresAt: Date;
   /** A unique identifier for the inbox. */
   readonly inboxHash: string;
+  /** Whether this inbox uses encryption. */
+  readonly encrypted: boolean;
+  /** Whether email authentication checks (SPF, DKIM, DMARC, PTR) are enabled for this inbox. */
+  readonly emailAuth: boolean;
 
-  private keypair: Keypair;
+  private keypair: Keypair | null;
   private apiClient: ApiClient;
-  private serverPublicKey: string;
+  private serverPublicKey: string | null;
   private strategy: DeliveryStrategy | null = null;
   private emailCache: Map<string, EmailData> = new Map();
 
@@ -52,15 +56,22 @@ export class Inbox {
    * @internal
    * Do not construct this class directly. Use `VaultSandboxClient.createInbox()` instead.
    */
-  constructor(inboxData: InboxData, keypair: Keypair, apiClient: ApiClient, serverPublicKey: string) {
+  constructor(inboxData: InboxData, keypair: Keypair | null, apiClient: ApiClient, serverPublicKey: string | null) {
     this.emailAddress = inboxData.emailAddress;
     this.inboxHash = inboxData.inboxHash;
     this.expiresAt = new Date(inboxData.expiresAt);
+    this.encrypted = inboxData.encrypted;
+    this.emailAuth = inboxData.emailAuth ?? false;
     this.keypair = keypair;
     this.apiClient = apiClient;
     this.serverPublicKey = serverPublicKey;
 
-    debug('Created inbox for %s (expires: %s)', this.emailAddress, this.expiresAt.toISOString());
+    debug(
+      'Created inbox for %s (expires: %s, encrypted: %s)',
+      this.emailAddress,
+      this.expiresAt.toISOString(),
+      this.encrypted,
+    );
   }
 
   /**
@@ -85,11 +96,13 @@ export class Inbox {
     const emails: IEmail[] = [];
 
     for (const emailData of emailsData) {
-      const email = await decryptEmailData(emailData, this.keypair, this.emailAddress, this.apiClient);
+      const email = isEncryptedEmailData(emailData)
+        ? await decryptEmailData(emailData, this.keypair!, this.emailAddress, this.apiClient)
+        : decodeBase64EmailData(emailData, this.emailAddress, this.apiClient);
       emails.push(email);
     }
 
-    debug('Successfully decrypted %d emails for inbox %s', emails.length, this.emailAddress);
+    debug('Successfully processed %d emails for inbox %s', emails.length, this.emailAddress);
     return emails;
   }
 
@@ -105,7 +118,14 @@ export class Inbox {
     const emails: IEmailMetadata[] = [];
 
     for (const emailData of emailsData) {
-      const metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, this.keypair);
+      let metadata: DecryptedMetadata;
+      if (isEncryptedEmailData(emailData)) {
+        metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, this.keypair!);
+      } else {
+        // Plain email - decode base64 metadata
+        const metadataJson = Buffer.from(emailData.metadata, 'base64').toString('utf-8');
+        metadata = JSON.parse(metadataJson);
+      }
       emails.push({
         id: emailData.id,
         from: metadata.from,
@@ -115,7 +135,7 @@ export class Inbox {
       });
     }
 
-    debug('Successfully decrypted %d email metadata for inbox %s', emails.length, this.emailAddress);
+    debug('Successfully processed %d email metadata for inbox %s', emails.length, this.emailAddress);
     return emails;
   }
 
@@ -128,8 +148,10 @@ export class Inbox {
   async getEmail(emailId: string): Promise<IEmail> {
     debug('Retrieving email %s from inbox %s', emailId, this.emailAddress);
     const emailData = await this.apiClient.getEmail(this.emailAddress, emailId);
-    const email = await decryptEmailData(emailData, this.keypair, this.emailAddress, this.apiClient);
-    debug('Successfully retrieved and decrypted email %s', emailId);
+    const email = isEncryptedEmailData(emailData)
+      ? await decryptEmailData(emailData, this.keypair!, this.emailAddress, this.apiClient)
+      : decodeBase64EmailData(emailData, this.emailAddress, this.apiClient);
+    debug('Successfully retrieved and processed email %s', emailId);
     return email;
   }
 
@@ -142,8 +164,16 @@ export class Inbox {
   async getRawEmail(emailId: string): Promise<RawEmail> {
     debug('Retrieving raw email %s from inbox %s', emailId, this.emailAddress);
     const rawEmailData = await this.apiClient.getRawEmail(this.emailAddress, emailId);
-    const raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair);
-    debug('Successfully retrieved and decrypted raw email %s (%d characters)', emailId, raw.length);
+    let raw: string;
+    if (rawEmailData.encryptedRaw) {
+      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair!);
+    } else if (rawEmailData.raw) {
+      // Plain email - decode base64
+      raw = Buffer.from(rawEmailData.raw, 'base64').toString('utf-8');
+    } else {
+      throw new Error('Invalid raw email data: neither encryptedRaw nor raw field present');
+    }
+    debug('Successfully retrieved and processed raw email %s (%d characters)', emailId, raw.length);
     return { id: rawEmailData.id, raw };
   }
 
@@ -278,20 +308,26 @@ export class Inbox {
   }
 
   /**
-   * Exports this inbox, including its key material, for backup/sharing.
+   * Exports this inbox, including its key material (for encrypted inboxes), for backup/sharing.
    * See vaultsandbox-spec.md Section 9: Inbox Export Format
    */
   export(): ExportedInboxData {
-    debug('Exporting inbox %s with key material', this.emailAddress);
+    debug('Exporting inbox %s (encrypted: %s)', this.emailAddress, this.encrypted);
     const exportedData: ExportedInboxData = {
       version: EXPORT_VERSION,
       emailAddress: this.emailAddress,
       expiresAt: this.expiresAt.toISOString(),
       inboxHash: this.inboxHash,
-      serverSigPk: this.serverPublicKey,
-      secretKey: toBase64Url(this.keypair.secretKey),
+      encrypted: this.encrypted,
       exportedAt: new Date().toISOString(),
     };
+
+    // Only include keys for encrypted inboxes
+    if (this.encrypted && this.serverPublicKey && this.keypair) {
+      exportedData.serverSigPk = this.serverPublicKey;
+      exportedData.secretKey = toBase64Url(this.keypair.secretKey);
+    }
+
     debug('Successfully exported inbox %s', this.emailAddress);
     return exportedData;
   }
@@ -402,10 +438,10 @@ export class Inbox {
   /**
    * Gets the keypair for this inbox.
    *
-   * @returns The keypair.
+   * @returns The keypair, or null for plain inboxes.
    * @internal
    */
-  getKeypair(): Keypair {
+  getKeypair(): Keypair | null {
     return this.keypair;
   }
 

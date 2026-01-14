@@ -52,7 +52,7 @@ describe('Email', () => {
       spf: { result: 'pass', domain: 'example.com' },
       dkim: [{ result: 'pass', domain: 'example.com' }],
       dmarc: { result: 'pass', policy: 'reject' },
-      reverseDns: { verified: true, hostname: 'mail.example.com' },
+      reverseDns: { result: 'pass', hostname: 'mail.example.com' },
     },
   };
 
@@ -302,7 +302,7 @@ describe('AuthResults', () => {
         spf: { result: 'pass' },
         dkim: [{ result: 'pass' }],
         dmarc: { result: 'pass' },
-        reverseDns: { verified: true },
+        reverseDns: { result: 'pass' },
       });
 
       const validation = email.authResults.validate();
@@ -416,7 +416,7 @@ describe('AuthResults', () => {
         spf: { result: 'pass' },
         dkim: [{ result: 'pass' }],
         dmarc: { result: 'pass' },
-        reverseDns: { verified: false, hostname: 'suspicious.host' },
+        reverseDns: { result: 'fail', hostname: 'suspicious.host' },
       });
 
       const validation = email.authResults.validate();
@@ -430,7 +430,7 @@ describe('AuthResults', () => {
         spf: { result: 'pass' },
         dkim: [{ result: 'pass' }],
         dmarc: { result: 'pass' },
-        reverseDns: { verified: false },
+        reverseDns: { result: 'fail' },
       });
 
       const validation = email.authResults.validate();

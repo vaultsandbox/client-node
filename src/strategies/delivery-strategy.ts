@@ -9,17 +9,17 @@ export interface DeliveryStrategy {
    * Wait for an email matching the given options
    * @param emailAddress - The inbox email address
    * @param inboxHash - The inbox hash for SSE subscription
-   * @param keypair - Keypair for decryption
+   * @param keypair - Keypair for decryption (null for plain inboxes)
    * @param options - Wait options including timeout and filters
    * @returns Promise resolving to the matched email
    */
-  waitForEmail(emailAddress: string, inboxHash: string, keypair: Keypair, options: WaitOptions): Promise<IEmail>;
+  waitForEmail(emailAddress: string, inboxHash: string, keypair: Keypair | null, options: WaitOptions): Promise<IEmail>;
 
   /**
    * Subscribe to new email notifications
    * @param emailAddress - The inbox email address
    * @param inboxHash - The inbox hash for SSE subscription
-   * @param keypair - Keypair for decryption
+   * @param keypair - Keypair for decryption (null for plain inboxes)
    * @param callback - Function to call when new email arrives
    * @param emailCache - Optional local email cache for sync operations
    * @param onEmailDeleted - Optional callback when email is deleted from server
@@ -28,7 +28,7 @@ export interface DeliveryStrategy {
   subscribe(
     emailAddress: string,
     inboxHash: string,
-    keypair: Keypair,
+    keypair: Keypair | null,
     callback: (email: IEmail) => void | Promise<void>,
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,

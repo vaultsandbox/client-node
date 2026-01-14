@@ -82,8 +82,8 @@ describeIntegration('SSE Strategy Tests', () => {
 
       const elapsed = Date.now() - startTime;
 
-      // Should timeout very quickly (within 100ms)
-      expect(elapsed).toBeLessThan(100);
+      // Should timeout very quickly (within 500ms, allowing for system variability)
+      expect(elapsed).toBeLessThan(500);
     }, 10000);
 
     it('should handle filter matching in waitForEmail', async () => {

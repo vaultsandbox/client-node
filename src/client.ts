@@ -22,8 +22,15 @@ import type {
   ExportedInboxData,
   InboxData,
   Keypair,
+  EncryptionPolicy,
 } from './types/index.js';
-import { InboxNotFoundError, InboxAlreadyExistsError, InvalidImportDataError, StrategyError } from './types/index.js';
+import {
+  InboxNotFoundError,
+  InboxAlreadyExistsError,
+  InvalidImportDataError,
+  StrategyError,
+  ApiError,
+} from './types/index.js';
 
 const debug = createDebug('vaultsandbox:client');
 
@@ -81,6 +88,7 @@ export class VaultSandboxClient {
   private apiClient: ApiClient;
   private config: ClientConfig;
   private serverPublicKey: string | null = null;
+  private encryptionPolicy: EncryptionPolicy | null = null;
   private inboxes: Map<string, Inbox> = new Map();
   private strategy: DeliveryStrategy | null = null;
 
@@ -105,10 +113,24 @@ export class VaultSandboxClient {
 
     const serverInfo = await this.apiClient.getServerInfo();
     this.serverPublicKey = serverInfo.serverSigPk;
+    this.encryptionPolicy = serverInfo.encryptionPolicy;
 
     // Create delivery strategy based on config
     // Note: SSE for email events (/api/events) is always available
     this.strategy = this.createStrategy();
+  }
+
+  /**
+   * Determines whether to create an encrypted inbox based on options and server policy.
+   * @private
+   */
+  private shouldEncrypt(options: CreateInboxOptions): boolean {
+    // If explicit encryption preference is set, use it
+    if (options.encryption) {
+      return options.encryption === 'encrypted';
+    }
+    // Use server default based on policy
+    return this.encryptionPolicy === 'always' || this.encryptionPolicy === 'enabled';
   }
 
   /**
@@ -144,25 +166,45 @@ export class VaultSandboxClient {
   /**
    * Creates a new, temporary email inbox.
    *
-   * This method generates a new quantum-safe keypair, registers the inbox
-   * with the VaultSandbox server, and returns an `Inbox` instance.
+   * This method optionally generates a new quantum-safe keypair (for encrypted inboxes),
+   * registers the inbox with the VaultSandbox server, and returns an `Inbox` instance.
    *
    * @param options - Optional parameters for inbox creation.
    * @returns A promise that resolves to a new `Inbox` instance.
    * @example
    * const inbox = await client.createInbox({ ttl: 3600 }); // Inbox expires in 1 hour
+   * const plainInbox = await client.createInbox({ encryption: 'plain' }); // Plain inbox (no encryption)
    */
   async createInbox(options: CreateInboxOptions = {}): Promise<Inbox> {
     await this.ensureInitialized();
 
-    // Generate keypair
-    const keypair = generateKeypair();
+    const useEncryption = this.shouldEncrypt(options);
+
+    // Generate keypair only for encrypted inboxes
+    const keypair = useEncryption ? generateKeypair() : null;
 
     // Create inbox on server
-    const inboxData = await this.apiClient.createInbox(keypair.publicKeyB64, options.ttl, options.emailAddress);
+    let inboxData: InboxData;
+    try {
+      inboxData = await this.apiClient.createInbox(
+        keypair?.publicKeyB64,
+        options.ttl,
+        options.emailAddress,
+        options.emailAuth,
+        options.encryption,
+      );
+    } catch (error) {
+      // Convert 409 Conflict to InboxAlreadyExistsError
+      if (error instanceof ApiError && error.statusCode === 409) {
+        /* istanbul ignore next - defensive fallback for error message */
+        const address = options.emailAddress ?? 'requested address';
+        throw new InboxAlreadyExistsError(`Inbox already exists: ${address}`);
+      }
+      throw error;
+    }
 
-    // Create Inbox instance (use serverSigPk from response)
-    const inbox = new Inbox(inboxData, keypair, this.apiClient, inboxData.serverSigPk);
+    // Create Inbox instance
+    const inbox = new Inbox(inboxData, keypair, this.apiClient, inboxData.serverSigPk ?? null);
 
     // Set delivery strategy
     /* istanbul ignore else - strategy always exists after ensureInitialized */
@@ -279,7 +321,7 @@ export class VaultSandboxClient {
     // Step 2: Validate version
     this.validateVersion(data);
 
-    // Step 3: Validate required fields
+    // Step 3: Validate required fields (depends on encryption status)
     this.validateRequiredFields(data);
 
     // Step 4: Validate emailAddress
@@ -296,12 +338,28 @@ export class VaultSandboxClient {
 
     await this.ensureInitialized();
 
-    // Step 7: Validate and decode serverSigPk
-    this.validateServerSigPkSize(data.serverSigPk);
-    this.validateServerPublicKey(data.serverSigPk);
+    // For encrypted inboxes, validate server public key and decode keys
+    let keypair: Keypair | null = null;
+    /* istanbul ignore else - plain inbox import doesn't enter this block */
+    if (data.encrypted) {
+      // Step 7: Validate and decode serverSigPk
+      /* istanbul ignore else - defensive, already validated by validateRequiredFields */
+      if (data.serverSigPk) {
+        this.validateServerSigPkSize(data.serverSigPk);
+        this.validateServerPublicKey(data.serverSigPk);
+      } else {
+        throw new InvalidImportDataError('serverSigPk is required for encrypted inboxes');
+      }
 
-    // Step 6: Validate and decode secretKey
-    const keypair = this.decodeAndValidateKeys(data);
+      // Step 6: Validate and decode secretKey
+      /* istanbul ignore else - defensive, already validated by validateRequiredFields */
+      if (data.secretKey) {
+        keypair = this.decodeAndValidateKeys(data);
+      } else {
+        throw new InvalidImportDataError('secretKey is required for encrypted inboxes');
+      }
+    }
+
     const inboxData = this.buildInboxData(data);
 
     return this.createAndTrackInbox(inboxData, keypair);
@@ -321,26 +379,30 @@ export class VaultSandboxClient {
 
   /**
    * Validates that all required fields are present and non-empty in the exported inbox data.
+   * Note: serverSigPk and secretKey are only required for encrypted inboxes.
    * @private
    * @param data - The exported inbox data to validate
    * @throws {InvalidImportDataError} If any required field is missing or empty
    */
   private validateRequiredFields(data: ExportedInboxData): void {
-    const requiredStringFields: (keyof ExportedInboxData)[] = [
-      'emailAddress',
-      'expiresAt',
-      'inboxHash',
-      'serverSigPk',
-      'secretKey',
-      'exportedAt',
-    ];
+    // These fields are always required
+    const alwaysRequiredFields: (keyof ExportedInboxData)[] = ['emailAddress', 'expiresAt', 'inboxHash', 'exportedAt'];
 
-    for (const field of requiredStringFields) {
+    for (const field of alwaysRequiredFields) {
       const value = data[field];
       if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
         throw new InvalidImportDataError(`Missing or invalid field: ${field}`);
       }
     }
+
+    // encrypted field must be a boolean
+    if (typeof data.encrypted !== 'boolean') {
+      /* istanbul ignore next - defensive for non-TypeScript callers */
+      throw new InvalidImportDataError('Missing or invalid field: encrypted');
+    }
+
+    // serverSigPk and secretKey are only required for encrypted inboxes
+    // Their validation is handled in importInbox when encrypted is true
   }
 
   /**
@@ -439,8 +501,8 @@ export class VaultSandboxClient {
    * @throws {InvalidImportDataError} If keys cannot be decoded or have invalid lengths
    */
   private decodeAndValidateKeys(data: ExportedInboxData): Keypair {
-    // Decode and validate secret key
-    const secretKey = this.decodeBase64UrlKey(data.secretKey, 'secret');
+    // Decode and validate secret key (caller ensures secretKey is defined for encrypted inboxes)
+    const secretKey = this.decodeBase64UrlKey(data.secretKey!, 'secret');
     this.validateKeyLength(secretKey, SECRET_KEY_SIZE, 'secret');
 
     // Derive public key from secret key per spec Section 10.2
@@ -494,6 +556,7 @@ export class VaultSandboxClient {
       emailAddress: data.emailAddress,
       expiresAt: data.expiresAt,
       inboxHash: data.inboxHash,
+      encrypted: data.encrypted,
       serverSigPk: data.serverSigPk,
     };
   }
@@ -502,11 +565,16 @@ export class VaultSandboxClient {
    * Creates a new Inbox instance, configures it with the delivery strategy, and adds it to tracking.
    * @private
    * @param inboxData - The inbox metadata
-   * @param keypair - The cryptographic keypair for the inbox
+   * @param keypair - The cryptographic keypair for the inbox (null for plain inboxes)
    * @returns The newly created and tracked Inbox instance
    */
-  private createAndTrackInbox(inboxData: InboxData, keypair: Keypair): Inbox {
-    const inbox = new Inbox(inboxData, keypair, this.apiClient, inboxData.serverSigPk);
+  private createAndTrackInbox(inboxData: InboxData, keypair: Keypair | null): Inbox {
+    const inbox = new Inbox(
+      inboxData,
+      keypair,
+      this.apiClient,
+      inboxData.serverSigPk ?? /* istanbul ignore next */ null,
+    );
 
     /* istanbul ignore else - strategy always exists after ensureInitialized */
     if (this.strategy) {

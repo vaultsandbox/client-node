@@ -62,6 +62,7 @@ const createMockInboxData = (): InboxData => ({
   emailAddress: 'test@example.vaultsandbox.io',
   expiresAt: new Date(Date.now() + 3600000).toISOString(),
   inboxHash: 'mock-inbox-hash',
+  encrypted: true,
   serverSigPk: 'mock-server-sig-pk',
 });
 
@@ -103,6 +104,9 @@ describe('Inbox', () => {
     mockKeypair = createMockKeypair();
     mockApiClient = createMockApiClient();
     inbox = new Inbox(createMockInboxData(), mockKeypair, mockApiClient, 'mock-server-pk');
+
+    // Mock isEncryptedEmailData to return true for mock encrypted email data
+    (emailUtils.isEncryptedEmailData as unknown as jest.Mock).mockReturnValue(true);
   });
 
   describe('constructor', () => {
@@ -560,6 +564,219 @@ describe('Inbox', () => {
       it('should return the API client', () => {
         const apiClient = inbox.getApiClient();
         expect(apiClient).toBe(mockApiClient);
+      });
+    });
+  });
+
+  describe('Plain Inbox Operations', () => {
+    let plainInbox: Inbox;
+    let plainMockApiClient: ApiClient;
+
+    // Create mock plain email data
+    const createMockPlainEmailData = (id: string, receivedAt?: string) => ({
+      id,
+      inboxId: 'test-inbox',
+      receivedAt: receivedAt ?? new Date().toISOString(),
+      isRead: false,
+      metadata: Buffer.from(
+        JSON.stringify({
+          from: `sender${id}@example.com`,
+          to: ['recipient@example.com'],
+          subject: `Subject ${id}`,
+          receivedAt: receivedAt ?? new Date().toISOString(),
+        }),
+      ).toString('base64'),
+      parsed: Buffer.from(
+        JSON.stringify({
+          text: 'Plain text body',
+          html: '<p>HTML body</p>',
+          headers: {},
+          attachments: [],
+        }),
+      ).toString('base64'),
+    });
+
+    // Create mock plain inbox data
+    const createMockPlainInboxData = (): InboxData => ({
+      emailAddress: 'plain@example.vaultsandbox.io',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      inboxHash: 'mock-plain-inbox-hash',
+      encrypted: false, // Plain inbox
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      plainMockApiClient = createMockApiClient();
+      // Create plain inbox with null keypair and null serverPublicKey
+      plainInbox = new Inbox(createMockPlainInboxData(), null, plainMockApiClient, null);
+    });
+
+    describe('listEmails with plain emails', () => {
+      it('should return decoded plain emails', async () => {
+        const mockPlainEmailsData = [createMockPlainEmailData('email-1'), createMockPlainEmailData('email-2')];
+
+        const mockEmail1 = { id: 'email-1', subject: 'Test 1' } as IEmail;
+        const mockEmail2 = { id: 'email-2', subject: 'Test 2' } as IEmail;
+
+        (plainMockApiClient.listEmails as jest.Mock).mockResolvedValue(mockPlainEmailsData);
+        // Mock isEncryptedEmailData to return false for plain emails
+        (emailUtils.isEncryptedEmailData as unknown as jest.Mock).mockReturnValue(false);
+        (emailUtils.decodeBase64EmailData as unknown as jest.Mock)
+          .mockReturnValueOnce(mockEmail1)
+          .mockReturnValueOnce(mockEmail2);
+
+        const result = await plainInbox.listEmails();
+
+        expect(result).toHaveLength(2);
+        expect(result[0]).toBe(mockEmail1);
+        expect(result[1]).toBe(mockEmail2);
+        expect(plainMockApiClient.listEmails).toHaveBeenCalledWith(plainInbox.emailAddress, true);
+        expect(emailUtils.decodeBase64EmailData).toHaveBeenCalledTimes(2);
+        expect(emailUtils.decryptEmailData).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('listEmailsMetadataOnly with plain emails', () => {
+      it('should return decoded plain email metadata', async () => {
+        const mockPlainEmailsData = [
+          createMockPlainEmailData('email-1', '2024-01-01T10:00:00Z'),
+          createMockPlainEmailData('email-2', '2024-01-02T10:00:00Z'),
+        ];
+
+        (plainMockApiClient.listEmails as jest.Mock).mockResolvedValue(mockPlainEmailsData);
+        // Mock isEncryptedEmailData to return false for plain emails
+        (emailUtils.isEncryptedEmailData as unknown as jest.Mock).mockReturnValue(false);
+
+        const result = await plainInbox.listEmailsMetadataOnly();
+
+        expect(result).toHaveLength(2);
+        expect(result[0]).toEqual({
+          id: 'email-1',
+          from: 'senderemail-1@example.com',
+          subject: 'Subject email-1',
+          receivedAt: new Date('2024-01-01T10:00:00Z'),
+          isRead: false,
+        });
+        expect(result[1]).toEqual({
+          id: 'email-2',
+          from: 'senderemail-2@example.com',
+          subject: 'Subject email-2',
+          receivedAt: new Date('2024-01-02T10:00:00Z'),
+          isRead: false,
+        });
+
+        expect(plainMockApiClient.listEmails).toHaveBeenCalledWith(plainInbox.emailAddress, false);
+        // Should NOT use decryptMetadata for plain emails
+        expect(decryptModule.decryptMetadata).not.toHaveBeenCalled();
+      });
+
+      it('should fallback to emailData.receivedAt when metadata.receivedAt is missing', async () => {
+        const plainEmailWithoutMetadataReceivedAt = {
+          id: 'email-1',
+          inboxId: 'test-inbox',
+          receivedAt: '2024-01-01T10:00:00Z',
+          isRead: false,
+          metadata: Buffer.from(
+            JSON.stringify({
+              from: 'sender@example.com',
+              to: ['recipient@example.com'],
+              subject: 'Test Subject',
+              // No receivedAt in metadata
+            }),
+          ).toString('base64'),
+        };
+
+        (plainMockApiClient.listEmails as jest.Mock).mockResolvedValue([plainEmailWithoutMetadataReceivedAt]);
+        (emailUtils.isEncryptedEmailData as unknown as jest.Mock).mockReturnValue(false);
+
+        const result = await plainInbox.listEmailsMetadataOnly();
+
+        expect(result[0].receivedAt).toEqual(new Date('2024-01-01T10:00:00Z'));
+      });
+    });
+
+    describe('getEmail with plain emails', () => {
+      it('should retrieve and decode a specific plain email', async () => {
+        const mockPlainEmailData = createMockPlainEmailData('email-123');
+        const mockEmail = { id: 'email-123', subject: 'Test' } as IEmail;
+
+        (plainMockApiClient.getEmail as jest.Mock).mockResolvedValue(mockPlainEmailData);
+        (emailUtils.isEncryptedEmailData as unknown as jest.Mock).mockReturnValue(false);
+        (emailUtils.decodeBase64EmailData as unknown as jest.Mock).mockReturnValue(mockEmail);
+
+        const result = await plainInbox.getEmail('email-123');
+
+        expect(result).toBe(mockEmail);
+        expect(plainMockApiClient.getEmail).toHaveBeenCalledWith(plainInbox.emailAddress, 'email-123');
+        expect(emailUtils.decodeBase64EmailData).toHaveBeenCalledWith(
+          mockPlainEmailData,
+          plainInbox.emailAddress,
+          plainMockApiClient,
+        );
+        expect(emailUtils.decryptEmailData).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('getRawEmail with plain emails', () => {
+      it('should retrieve and decode raw plain email', async () => {
+        const rawContent = 'From: sender@example.com\r\nSubject: Test\r\n\r\nBody';
+        const mockRawEmailData = {
+          id: 'email-123',
+          raw: Buffer.from(rawContent).toString('base64'),
+        };
+
+        (plainMockApiClient.getRawEmail as jest.Mock).mockResolvedValue(mockRawEmailData);
+
+        const result = await plainInbox.getRawEmail('email-123');
+
+        expect(result).toEqual({
+          id: 'email-123',
+          raw: rawContent,
+        });
+        expect(plainMockApiClient.getRawEmail).toHaveBeenCalledWith(plainInbox.emailAddress, 'email-123');
+        // Should NOT use decryptRaw for plain emails
+        expect(decryptModule.decryptRaw).not.toHaveBeenCalled();
+      });
+
+      it('should throw error when neither encryptedRaw nor raw field is present', async () => {
+        const mockRawEmailData = {
+          id: 'email-123',
+          // Neither encryptedRaw nor raw
+        };
+
+        (plainMockApiClient.getRawEmail as jest.Mock).mockResolvedValue(mockRawEmailData);
+
+        await expect(plainInbox.getRawEmail('email-123')).rejects.toThrow(
+          'Invalid raw email data: neither encryptedRaw nor raw field present',
+        );
+      });
+    });
+
+    describe('export for plain inboxes', () => {
+      it('should export plain inbox data without key material', () => {
+        const exportedData = plainInbox.export();
+
+        expect(exportedData.version).toBe(1);
+        expect(exportedData.emailAddress).toBe(plainInbox.emailAddress);
+        expect(exportedData.inboxHash).toBe(plainInbox.inboxHash);
+        expect(exportedData.expiresAt).toBe(plainInbox.expiresAt.toISOString());
+        expect(exportedData.encrypted).toBe(false);
+        // Plain inbox should NOT have key material
+        expect(exportedData.serverSigPk).toBeUndefined();
+        expect(exportedData.secretKey).toBeUndefined();
+        expect(exportedData.exportedAt).toBeTruthy();
+      });
+    });
+
+    describe('constructor for plain inbox', () => {
+      it('should create a plain inbox with encrypted=false', () => {
+        const plainInboxData = createMockPlainInboxData();
+        const newPlainInbox = new Inbox(plainInboxData, null, plainMockApiClient, null);
+
+        expect(newPlainInbox.emailAddress).toBe(plainInboxData.emailAddress);
+        expect(newPlainInbox.inboxHash).toBe(plainInboxData.inboxHash);
+        expect(newPlainInbox.encrypted).toBe(false);
+        expect(newPlainInbox.getKeypair()).toBeNull();
       });
     });
   });

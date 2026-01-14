@@ -31,6 +31,10 @@ export type {
   ServerInfo,
   Subscription,
   ExportedInboxData,
+  EncryptionPolicy,
+  EmailData,
+  EncryptedEmailData,
+  PlainEmailData,
 } from './types/index.js';
 
 // Errors - all custom errors should be exported for proper error handling
@@ -54,3 +58,6 @@ export { generateKeypair } from './crypto/keypair.js';
 export { decrypt, decryptMetadata, decryptParsed, decryptRaw } from './crypto/decrypt.js';
 export { verifySignature, verifySignatureSafe } from './crypto/signature.js';
 export { toBase64Url, fromBase64Url } from './crypto/utils.js';
+
+// Email utilities
+export { isEncryptedEmailData } from './utils/email-utils.js';

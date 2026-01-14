@@ -99,6 +99,7 @@ describeIntegration('Inbox Import/Export Tests', () => {
       expect(exportedData.emailAddress).toBe(inbox.emailAddress);
       expect(exportedData.inboxHash).toBe(inbox.inboxHash);
       expect(exportedData.expiresAt).toBeDefined();
+      expect(exportedData.encrypted).toBe(true);
       expect(exportedData.serverSigPk).toBeDefined();
       expect(exportedData.secretKey).toBeDefined();
       expect(exportedData.exportedAt).toBeDefined();
@@ -108,6 +109,7 @@ describeIntegration('Inbox Import/Export Tests', () => {
       expect(typeof exportedData.emailAddress).toBe('string');
       expect(typeof exportedData.inboxHash).toBe('string');
       expect(typeof exportedData.expiresAt).toBe('string');
+      expect(typeof exportedData.encrypted).toBe('boolean');
       expect(typeof exportedData.serverSigPk).toBe('string');
       expect(typeof exportedData.secretKey).toBe('string');
       expect(typeof exportedData.exportedAt).toBe('string');
@@ -120,8 +122,8 @@ describeIntegration('Inbox Import/Export Tests', () => {
       expect(exportedData.secretKey).toMatch(/^[A-Za-z0-9_-]+$/);
       expect(exportedData.serverSigPk).toMatch(/^[A-Za-z0-9_-]+$/);
 
-      // Verify keys are non-empty
-      expect(exportedData.secretKey.length).toBeGreaterThan(0);
+      // Verify keys are non-empty (encrypted inbox should always have secretKey)
+      expect(exportedData.secretKey!.length).toBeGreaterThan(0);
     });
 
     it('should export an inbox by email address string', async () => {
@@ -357,6 +359,60 @@ describeIntegration('Inbox Import/Export Tests', () => {
 
       await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
       await expect(clientB.importInbox(invalidData)).rejects.toThrow('Invalid server public key encoding');
+      await clientB.close();
+    });
+
+    it('should throw InvalidImportDataError for encrypted inbox without serverSigPk', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      // Remove serverSigPk but keep encrypted: true
+      const invalidData = { ...exportedData, serverSigPk: undefined };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('serverSigPk is required for encrypted inboxes');
+      await clientB.close();
+    });
+
+    it('should throw InvalidImportDataError for encrypted inbox without secretKey', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      // Remove secretKey but keep encrypted: true and serverSigPk
+      const invalidData = { ...exportedData, secretKey: undefined };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('secretKey is required for encrypted inboxes');
+      await clientB.close();
+    });
+
+    it('should throw InvalidImportDataError when encrypted field is not a boolean', async () => {
+      const inbox = await client.createInbox();
+      createdInboxes.push(inbox);
+
+      const exportedData = client.exportInbox(inbox);
+      // Set encrypted to a non-boolean value
+      const invalidData = { ...exportedData, encrypted: 'true' as unknown as boolean };
+
+      const clientB = new VaultSandboxClient({
+        url: GATEWAY_URL,
+        apiKey: API_KEY,
+      });
+
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow(InvalidImportDataError);
+      await expect(clientB.importInbox(invalidData)).rejects.toThrow('Missing or invalid field: encrypted');
       await clientB.close();
     });
   });

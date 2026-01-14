@@ -3,8 +3,21 @@
  * Covers all branches for findMatchingEmail and matchesFilters functions.
  */
 
-import { findMatchingEmail, matchesFilters, decryptEmailData } from '../src/utils/email-utils';
-import type { IEmail, EmailData, Keypair, AttachmentData } from '../src/types/index';
+import {
+  findMatchingEmail,
+  matchesFilters,
+  decryptEmailData,
+  isEncryptedEmailData,
+  decodeBase64EmailData,
+} from '../src/utils/email-utils';
+import type {
+  IEmail,
+  EmailData,
+  Keypair,
+  AttachmentData,
+  PlainEmailData,
+  EncryptedEmailData,
+} from '../src/types/index';
 import * as decryptModule from '../src/crypto/decrypt';
 import * as signatureModule from '../src/crypto/signature';
 import * as utilsModule from '../src/crypto/utils';
@@ -411,6 +424,263 @@ describe('email-utils', () => {
       await expect(
         decryptEmailData(emailDataWithParsed, mockKeypair, 'test@example.com', mockApiClient),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe('isEncryptedEmailData', () => {
+    it('should return true for encrypted email data', () => {
+      const encryptedEmail: EncryptedEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        encryptedMetadata: {
+          v: 1,
+          ct_kem: 'ct',
+          nonce: 'nonce',
+          aad: 'aad',
+          ciphertext: 'cipher',
+          sig: 'sig',
+          server_sig_pk: 'pk',
+          algs: { kem: 'ML-KEM-768', sig: 'ML-DSA-65', aead: 'AES-256-GCM', kdf: 'HKDF-SHA-512' },
+        },
+      };
+
+      expect(isEncryptedEmailData(encryptedEmail)).toBe(true);
+    });
+
+    it('should return false for plain email data', () => {
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(
+          JSON.stringify({
+            from: 'sender@example.com',
+            to: ['recipient@example.com'],
+            subject: 'Test Subject',
+            receivedAt: '2024-01-01T00:00:00Z',
+          }),
+        ).toString('base64'),
+      };
+
+      expect(isEncryptedEmailData(plainEmail)).toBe(false);
+    });
+  });
+
+  describe('decodeBase64EmailData', () => {
+    const mockApiClient = {} as import('../src/http/api-client').ApiClient;
+
+    beforeEach(() => {
+      (Email as jest.Mock).mockImplementation(() => createMockEmail());
+    });
+
+    it('should decode plain email without parsed content', () => {
+      const metadata = {
+        from: 'sender@example.com',
+        to: ['recipient@example.com'],
+        subject: 'Test Subject',
+        receivedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(JSON.stringify(metadata)).toString('base64'),
+      };
+
+      decodeBase64EmailData(plainEmail, 'test@example.com', mockApiClient);
+
+      expect(Email).toHaveBeenCalledWith(
+        plainEmail,
+        metadata,
+        null, // no parsed content
+        'test@example.com',
+        mockApiClient,
+        null, // no keypair for plain emails
+      );
+    });
+
+    it('should decode plain email with parsed content', () => {
+      const metadata = {
+        from: 'sender@example.com',
+        to: ['recipient@example.com'],
+        subject: 'Test Subject',
+        receivedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const parsed = {
+        text: 'Plain text body',
+        html: '<p>HTML body</p>',
+        headers: { 'message-id': '<test@example.com>' },
+        attachments: [],
+      };
+
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        parsed: Buffer.from(JSON.stringify(parsed)).toString('base64'),
+      };
+
+      decodeBase64EmailData(plainEmail, 'test@example.com', mockApiClient);
+
+      expect(Email).toHaveBeenCalledWith(plainEmail, metadata, parsed, 'test@example.com', mockApiClient, null);
+    });
+
+    it('should convert base64 string attachment content to Uint8Array', () => {
+      const base64Content = 'SGVsbG8gV29ybGQ='; // "Hello World" in base64
+      const expectedUint8Array = new Uint8Array([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]);
+
+      const metadata = {
+        from: 'sender@example.com',
+        to: ['recipient@example.com'],
+        subject: 'Test with Attachment',
+        receivedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const parsed = {
+        text: 'Body with attachment',
+        html: null,
+        headers: {},
+        attachments: [
+          {
+            filename: 'test.txt',
+            contentType: 'text/plain',
+            size: 11,
+            content: base64Content,
+          },
+        ],
+      };
+
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        parsed: Buffer.from(JSON.stringify(parsed)).toString('base64'),
+      };
+
+      // Mock fromBase64 to return expected Uint8Array
+      jest.spyOn(utilsModule, 'fromBase64').mockReturnValue(expectedUint8Array);
+
+      decodeBase64EmailData(plainEmail, 'test@example.com', mockApiClient);
+
+      expect(utilsModule.fromBase64).toHaveBeenCalledWith(base64Content);
+    });
+
+    it('should preserve attachment content that is already Uint8Array', () => {
+      const existingUint8Array = new Uint8Array([1, 2, 3, 4, 5]);
+
+      const metadata = {
+        from: 'sender@example.com',
+        to: ['recipient@example.com'],
+        subject: 'Test with Binary Attachment',
+        receivedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const parsed = {
+        text: 'Body',
+        html: null,
+        headers: {},
+        attachments: [
+          {
+            filename: 'test.bin',
+            contentType: 'application/octet-stream',
+            size: 5,
+            content: existingUint8Array,
+          },
+        ],
+      };
+
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        parsed: Buffer.from(JSON.stringify(parsed)).toString('base64'),
+      };
+
+      const fromBase64Spy = jest.spyOn(utilsModule, 'fromBase64');
+
+      decodeBase64EmailData(plainEmail, 'test@example.com', mockApiClient);
+
+      // fromBase64 should not be called for Uint8Array content
+      expect(fromBase64Spy).not.toHaveBeenCalled();
+    });
+
+    it('should handle attachment with undefined content', () => {
+      const metadata = {
+        from: 'sender@example.com',
+        to: ['recipient@example.com'],
+        subject: 'Test with Empty Attachment',
+        receivedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const parsed = {
+        text: 'Body',
+        html: null,
+        headers: {},
+        attachments: [
+          {
+            filename: 'test.txt',
+            contentType: 'text/plain',
+            size: 0,
+            content: undefined,
+          },
+        ],
+      };
+
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        parsed: Buffer.from(JSON.stringify(parsed)).toString('base64'),
+      };
+
+      const fromBase64Spy = jest.spyOn(utilsModule, 'fromBase64');
+
+      decodeBase64EmailData(plainEmail, 'test@example.com', mockApiClient);
+
+      // fromBase64 should not be called for undefined content
+      expect(fromBase64Spy).not.toHaveBeenCalled();
+    });
+
+    it('should handle null attachments array', () => {
+      const metadata = {
+        from: 'sender@example.com',
+        to: ['recipient@example.com'],
+        subject: 'Test without Attachments',
+        receivedAt: '2024-01-01T00:00:00Z',
+      };
+
+      const parsed = {
+        text: 'Body',
+        html: null,
+        headers: {},
+        attachments: null,
+      };
+
+      const plainEmail: PlainEmailData = {
+        id: 'email-123',
+        inboxId: 'inbox-456',
+        receivedAt: '2024-01-01T00:00:00Z',
+        isRead: false,
+        metadata: Buffer.from(JSON.stringify(metadata)).toString('base64'),
+        parsed: Buffer.from(JSON.stringify(parsed)).toString('base64'),
+      };
+
+      // Should not throw
+      expect(() => decodeBase64EmailData(plainEmail, 'test@example.com', mockApiClient)).not.toThrow();
     });
   });
 });

@@ -6,7 +6,12 @@ import createDebug from 'debug';
 import type { ApiClient } from '../http/api-client.js';
 import type { Keypair, EmailData, IEmail, WaitOptions, Subscription } from '../types/index.js';
 import { TimeoutError, InboxNotFoundError } from '../types/index.js';
-import { decryptEmailData, findMatchingEmail } from '../utils/email-utils.js';
+import {
+  decryptEmailData,
+  decodeBase64EmailData,
+  isEncryptedEmailData,
+  findMatchingEmail,
+} from '../utils/email-utils.js';
 import { sleep } from '../utils/sleep.js';
 import { syncInbox } from '../sync/inbox-sync.js';
 import type { DeliveryStrategy } from './delivery-strategy.js';
@@ -41,7 +46,7 @@ export class PollingStrategy implements DeliveryStrategy {
   async waitForEmail(
     emailAddress: string,
     _inboxHash: string,
-    keypair: Keypair,
+    keypair: Keypair | null,
     options: WaitOptions = {},
   ): Promise<IEmail> {
     /* istanbul ignore next 2 - compile-time defaults, only one branch taken per execution */
@@ -64,7 +69,7 @@ export class PollingStrategy implements DeliveryStrategy {
           if (syncStatus.emailCount > 0) {
             // Hash changed - fetch full email list with content
             const emailsData = await this.apiClient.listEmails(emailAddress, true);
-            const emails = await this.decryptEmails(emailsData, keypair, emailAddress);
+            const emails = await this.processEmails(emailsData, keypair, emailAddress);
             const matchingEmail = findMatchingEmail(emails, options);
 
             if (matchingEmail) {
@@ -118,13 +123,19 @@ export class PollingStrategy implements DeliveryStrategy {
   }
 
   /**
-   * Decrypts a list of email data objects
+   * Processes a list of email data objects (decrypts or decodes based on format)
    */
-  private async decryptEmails(emailsData: EmailData[], keypair: Keypair, emailAddress: string): Promise<IEmail[]> {
+  private async processEmails(
+    emailsData: EmailData[],
+    keypair: Keypair | null,
+    emailAddress: string,
+  ): Promise<IEmail[]> {
     const emails: IEmail[] = [];
 
     for (const emailData of emailsData) {
-      const email = await decryptEmailData(emailData, keypair, emailAddress, this.apiClient);
+      const email = isEncryptedEmailData(emailData)
+        ? await decryptEmailData(emailData, keypair!, emailAddress, this.apiClient)
+        : decodeBase64EmailData(emailData, emailAddress, this.apiClient);
       emails.push(email);
     }
 
@@ -137,7 +148,7 @@ export class PollingStrategy implements DeliveryStrategy {
   subscribe(
     emailAddress: string,
     _inboxHash: string,
-    keypair: Keypair,
+    keypair: Keypair | null,
     callback: (email: IEmail) => void | Promise<void>,
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
@@ -163,7 +174,9 @@ export class PollingStrategy implements DeliveryStrategy {
                 try {
                   // Fetch full email content for new emails
                   const fullEmailData = await this.apiClient.getEmail(emailAddress, emailData.id);
-                  const email = await decryptEmailData(fullEmailData, keypair, emailAddress, this.apiClient);
+                  const email = isEncryptedEmailData(fullEmailData)
+                    ? await decryptEmailData(fullEmailData, keypair!, emailAddress, this.apiClient)
+                    : decodeBase64EmailData(fullEmailData, emailAddress, this.apiClient);
 
                   const callbackResult = callback(email);
                   // Handle case where callback returns a promise

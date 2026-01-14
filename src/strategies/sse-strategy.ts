@@ -11,7 +11,7 @@ import type {
   EmailData,
 } from '../types/index.js';
 import { TimeoutError, SSEError } from '../types/index.js';
-import { decryptEmailData, matchesFilters } from '../utils/email-utils.js';
+import { decryptEmailData, decodeBase64EmailData, isEncryptedEmailData, matchesFilters } from '../utils/email-utils.js';
 import { syncInbox } from '../sync/inbox-sync.js';
 import type { DeliveryStrategy } from './delivery-strategy.js';
 
@@ -29,7 +29,7 @@ interface EventSourceInitWithFetch {
 interface InboxSubscription {
   emailAddress: string;
   inboxHash: string;
-  keypair: Keypair;
+  keypair: Keypair | null;
   callbacks: Set<(email: IEmail) => void | Promise<void>>;
   seenEmailIds: Set<string>;
   emailCache: Map<string, EmailData>;
@@ -69,7 +69,7 @@ export class SSEStrategy implements DeliveryStrategy {
   async waitForEmail(
     emailAddress: string,
     inboxHash: string,
-    keypair: Keypair,
+    keypair: Keypair | null,
     /* istanbul ignore next - default parameter */ options: WaitOptions = {},
   ): Promise<IEmail> {
     const timeout = options.timeout ?? /* istanbul ignore next - default timeout */ 30000;
@@ -113,7 +113,7 @@ export class SSEStrategy implements DeliveryStrategy {
   subscribe(
     emailAddress: string,
     inboxHash: string,
-    keypair: Keypair,
+    keypair: Keypair | null,
     callback: (email: IEmail) => void | Promise<void>,
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
@@ -283,8 +283,10 @@ export class SSEStrategy implements DeliveryStrategy {
       // Add to email cache
       subscription.emailCache.set(emailId, emailData);
 
-      // Decrypt email
-      const email = await decryptEmailData(emailData, subscription.keypair, subscription.emailAddress, this.apiClient);
+      // Decrypt or decode email based on format
+      const email = isEncryptedEmailData(emailData)
+        ? await decryptEmailData(emailData, subscription.keypair!, subscription.emailAddress, this.apiClient)
+        : decodeBase64EmailData(emailData, subscription.emailAddress, this.apiClient);
 
       // Notify all callbacks for this inbox
       subscription.callbacks.forEach((callback) => {
@@ -369,13 +371,19 @@ export class SSEStrategy implements DeliveryStrategy {
               const fullEmailData = await this.apiClient.getEmail(subscription.emailAddress, metadataOnly.id);
               subscription.emailCache.set(metadataOnly.id, fullEmailData);
 
-              // Decrypt and notify
-              const email = await decryptEmailData(
-                fullEmailData,
-                subscription.keypair,
-                subscription.emailAddress,
-                this.apiClient,
-              );
+              // Decrypt or decode and notify
+              const email = isEncryptedEmailData(fullEmailData)
+                ? await decryptEmailData(
+                    fullEmailData,
+                    subscription.keypair!,
+                    subscription.emailAddress,
+                    this.apiClient,
+                  )
+                : /* istanbul ignore next */ decodeBase64EmailData(
+                    fullEmailData,
+                    subscription.emailAddress,
+                    this.apiClient,
+                  );
 
               /* istanbul ignore next - callback execution after successful decryption */
               subscription.callbacks.forEach((callback) => {

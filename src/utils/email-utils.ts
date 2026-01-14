@@ -6,16 +6,35 @@ import { Email } from '../email.js';
 import { decryptMetadata, decryptParsed } from '../crypto/decrypt.js';
 import { verifySignature } from '../crypto/signature.js';
 import { fromBase64 } from '../crypto/utils.js';
-import type { Keypair, EmailData, IEmail, WaitOptions, DecryptedMetadata, DecryptedParsed } from '../types/index.js';
+import type {
+  Keypair,
+  EmailData,
+  EncryptedEmailData,
+  PlainEmailData,
+  IEmail,
+  WaitOptions,
+  DecryptedMetadata,
+  DecryptedParsed,
+  AttachmentData,
+} from '../types/index.js';
 import type { ApiClient } from '../http/api-client.js';
 
 /**
- * Decrypts an EmailData object into an Email instance.
+ * Type guard to determine if email data is encrypted.
+ * @param email - The email data to check
+ * @returns true if the email has encryptedMetadata (encrypted format)
+ */
+export function isEncryptedEmailData(email: EmailData): email is EncryptedEmailData {
+  return 'encryptedMetadata' in email;
+}
+
+/**
+ * Decrypts an EncryptedEmailData object into an Email instance.
  * Expects full email data with encryptedParsed content.
  * IMPORTANT: Signature verification happens BEFORE decryption for security
  */
 export async function decryptEmailData(
-  emailData: EmailData,
+  emailData: EncryptedEmailData,
   keypair: Keypair,
   emailAddress: string,
   apiClient: ApiClient,
@@ -51,6 +70,40 @@ export async function decryptEmailData(
   }
 
   return new Email(emailData, metadata, parsed, emailAddress, apiClient, keypair);
+}
+
+/**
+ * Decodes a PlainEmailData object into an Email instance.
+ * Plain emails have base64-encoded metadata and parsed content.
+ */
+export function decodeBase64EmailData(emailData: PlainEmailData, emailAddress: string, apiClient: ApiClient): IEmail {
+  // Decode base64 metadata
+  const metadataJson = Buffer.from(emailData.metadata, 'base64').toString('utf-8');
+  const metadata: DecryptedMetadata = JSON.parse(metadataJson);
+
+  // Decode parsed content if available
+  let parsed: DecryptedParsed | null = null;
+  if (emailData.parsed) {
+    const parsedJson = Buffer.from(emailData.parsed, 'base64').toString('utf-8');
+    parsed = JSON.parse(parsedJson);
+
+    // Transform attachment content from base64 strings to Uint8Array
+    // Same as encrypted path - server sends attachment content as base64
+    if (parsed?.attachments) {
+      parsed.attachments = parsed.attachments.map((att: AttachmentData & { content?: string | Uint8Array }) => {
+        if (att.content && typeof att.content === 'string') {
+          return {
+            ...att,
+            content: fromBase64(att.content),
+          };
+        }
+        return att;
+      });
+    }
+  }
+
+  // Pass null for keypair since plain emails don't need decryption
+  return new Email(emailData, metadata, parsed, emailAddress, apiClient, null);
 }
 
 /**
