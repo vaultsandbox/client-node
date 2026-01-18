@@ -35,6 +35,18 @@ export type {
   EmailData,
   EncryptedEmailData,
   PlainEmailData,
+  // Webhook types
+  WebhookEventType,
+  FilterRule,
+  FilterConfig,
+  CustomTemplate,
+  CreateWebhookOptions,
+  UpdateWebhookOptions,
+  WebhookStats,
+  WebhookData,
+  WebhookListResponse,
+  TestWebhookResponse,
+  RotateSecretResponse,
 } from './types/index.js';
 
 // Errors - all custom errors should be exported for proper error handling
@@ -51,6 +63,7 @@ export {
   InvalidImportDataError,
   StrategyError,
   SSEError,
+  WebhookNotFoundError,
 } from './types/index.js';
 
 // Crypto utilities (for advanced users)

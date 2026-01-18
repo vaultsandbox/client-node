@@ -21,6 +21,12 @@ import type {
   ExportedInboxData,
   DecryptedMetadata,
   EmailData,
+  CreateWebhookOptions,
+  UpdateWebhookOptions,
+  WebhookData,
+  WebhookListResponse,
+  TestWebhookResponse,
+  RotateSecretResponse,
 } from './types/index.js';
 import { TimeoutError, StrategyError } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
@@ -453,5 +459,97 @@ export class Inbox {
    */
   getApiClient(): ApiClient {
     return this.apiClient;
+  }
+
+  // ===== Webhooks =====
+
+  /**
+   * Creates a new webhook for this inbox.
+   *
+   * @param options - Options for creating the webhook.
+   * @returns A promise that resolves to the created webhook data including the secret.
+   */
+  async createWebhook(options: CreateWebhookOptions): Promise<WebhookData> {
+    debug('Creating webhook for inbox %s', this.emailAddress);
+    const webhook = await this.apiClient.createInboxWebhook(this.emailAddress, options);
+    debug('Successfully created webhook %s for inbox %s', webhook.id, this.emailAddress);
+    return webhook;
+  }
+
+  /**
+   * Lists all webhooks for this inbox.
+   *
+   * @returns A promise that resolves to the list of webhooks.
+   */
+  async listWebhooks(): Promise<WebhookListResponse> {
+    debug('Listing webhooks for inbox %s', this.emailAddress);
+    const response = await this.apiClient.listInboxWebhooks(this.emailAddress);
+    debug('Found %d webhooks for inbox %s', response.total, this.emailAddress);
+    return response;
+  }
+
+  /**
+   * Retrieves a specific webhook by ID.
+   *
+   * @param webhookId - The ID of the webhook to retrieve.
+   * @returns A promise that resolves to the webhook data.
+   */
+  async getWebhook(webhookId: string): Promise<WebhookData> {
+    debug('Retrieving webhook %s for inbox %s', webhookId, this.emailAddress);
+    const webhook = await this.apiClient.getInboxWebhook(this.emailAddress, webhookId);
+    debug('Successfully retrieved webhook %s', webhookId);
+    return webhook;
+  }
+
+  /**
+   * Updates a specific webhook.
+   *
+   * @param webhookId - The ID of the webhook to update.
+   * @param options - Options for updating the webhook.
+   * @returns A promise that resolves to the updated webhook data.
+   */
+  async updateWebhook(webhookId: string, options: UpdateWebhookOptions): Promise<WebhookData> {
+    debug('Updating webhook %s for inbox %s', webhookId, this.emailAddress);
+    const webhook = await this.apiClient.updateInboxWebhook(this.emailAddress, webhookId, options);
+    debug('Successfully updated webhook %s', webhookId);
+    return webhook;
+  }
+
+  /**
+   * Deletes a specific webhook.
+   *
+   * @param webhookId - The ID of the webhook to delete.
+   * @returns A promise that resolves when the webhook is deleted.
+   */
+  async deleteWebhook(webhookId: string): Promise<void> {
+    debug('Deleting webhook %s for inbox %s', webhookId, this.emailAddress);
+    await this.apiClient.deleteInboxWebhook(this.emailAddress, webhookId);
+    debug('Successfully deleted webhook %s', webhookId);
+  }
+
+  /**
+   * Tests a webhook by sending a test payload.
+   *
+   * @param webhookId - The ID of the webhook to test.
+   * @returns A promise that resolves to the test result.
+   */
+  async testWebhook(webhookId: string): Promise<TestWebhookResponse> {
+    debug('Testing webhook %s for inbox %s', webhookId, this.emailAddress);
+    const result = await this.apiClient.testInboxWebhook(this.emailAddress, webhookId);
+    debug('Webhook %s test result: success=%s', webhookId, result.success);
+    return result;
+  }
+
+  /**
+   * Rotates the secret for a specific webhook.
+   *
+   * @param webhookId - The ID of the webhook whose secret to rotate.
+   * @returns A promise that resolves to the new secret and validity period of the old secret.
+   */
+  async rotateWebhookSecret(webhookId: string): Promise<RotateSecretResponse> {
+    debug('Rotating secret for webhook %s in inbox %s', webhookId, this.emailAddress);
+    const result = await this.apiClient.rotateInboxWebhookSecret(this.emailAddress, webhookId);
+    debug('Successfully rotated secret for webhook %s', webhookId);
+    return result;
   }
 }

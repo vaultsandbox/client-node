@@ -602,3 +602,183 @@ export class StrategyError extends VaultSandboxError {
     Object.setPrototypeOf(this, StrategyError.prototype);
   }
 }
+
+/**
+ * An error thrown when a webhook is not found.
+ */
+export class WebhookNotFoundError extends VaultSandboxError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WebhookNotFoundError';
+    Object.setPrototypeOf(this, WebhookNotFoundError.prototype);
+  }
+}
+
+// ===== Webhooks =====
+
+/**
+ * Webhook event types.
+ */
+export type WebhookEventType = 'email.received' | 'email.stored' | 'email.deleted';
+
+/**
+ * A single filter rule for webhook filtering.
+ */
+export interface FilterRule {
+  /** The field to filter on. */
+  field: string;
+  /** The operator to use for matching. */
+  operator: 'equals' | 'contains' | 'starts_with' | 'ends_with' | 'domain' | 'regex' | 'exists';
+  /** The value to match against. */
+  value: string;
+  /** Whether the match should be case sensitive. */
+  caseSensitive?: boolean;
+}
+
+/**
+ * Filter configuration for webhooks.
+ */
+export interface FilterConfig {
+  /** The filter rules to apply. */
+  rules: FilterRule[];
+  /** How to combine the rules: 'all' (AND) or 'any' (OR). */
+  mode: 'all' | 'any';
+  /** Whether to require email authentication to pass. */
+  requireAuth?: boolean;
+}
+
+/**
+ * A custom webhook template.
+ */
+export interface CustomTemplate {
+  /** Template type, must be 'custom'. */
+  type: 'custom';
+  /** The template body. */
+  body: string;
+  /** The content type for the webhook payload. */
+  contentType?: string;
+}
+
+/**
+ * Options for creating a webhook.
+ */
+export interface CreateWebhookOptions {
+  /** The URL to send webhook requests to. */
+  url: string;
+  /** The events that trigger the webhook. */
+  events: WebhookEventType[];
+  /** The template to use for formatting the webhook payload. */
+  template?: 'slack' | 'discord' | 'teams' | 'simple' | 'notification' | 'zapier' | 'default' | CustomTemplate;
+  /** Filter configuration to control which emails trigger the webhook. */
+  filter?: FilterConfig;
+  /** A description of the webhook. */
+  description?: string;
+}
+
+/**
+ * Options for updating a webhook.
+ */
+export interface UpdateWebhookOptions {
+  /** The URL to send webhook requests to. */
+  url?: string;
+  /** The events that trigger the webhook. */
+  events?: WebhookEventType[];
+  /** The template to use for formatting the webhook payload. Set to null to remove. */
+  template?: string | CustomTemplate | null;
+  /** Filter configuration to control which emails trigger the webhook. Set to null to remove. */
+  filter?: FilterConfig | null;
+  /** A description of the webhook. */
+  description?: string;
+  /** Whether the webhook is enabled. */
+  enabled?: boolean;
+}
+
+/**
+ * Webhook delivery statistics.
+ */
+export interface WebhookStats {
+  /** Total number of delivery attempts. */
+  totalDeliveries: number;
+  /** Number of successful deliveries. */
+  successfulDeliveries: number;
+  /** Number of failed deliveries. */
+  failedDeliveries: number;
+}
+
+/**
+ * Webhook data returned from the API.
+ */
+export interface WebhookData {
+  /** Unique identifier for the webhook. */
+  id: string;
+  /** The URL to send webhook requests to. */
+  url: string;
+  /** The events that trigger the webhook. */
+  events: WebhookEventType[];
+  /** The scope of the webhook. */
+  scope: 'global' | 'inbox';
+  /** The email address of the inbox (for inbox-scoped webhooks). */
+  inboxEmail?: string;
+  /** The hash of the inbox (for inbox-scoped webhooks). */
+  inboxHash?: string;
+  /** Whether the webhook is enabled. */
+  enabled: boolean;
+  /** The webhook secret for signature verification. Only included on creation. */
+  secret?: string;
+  /** The template configuration. */
+  template?: unknown;
+  /** The filter configuration. */
+  filter?: FilterConfig;
+  /** A description of the webhook. */
+  description?: string;
+  /** ISO 8601 timestamp when the webhook was created. */
+  createdAt: string;
+  /** ISO 8601 timestamp when the webhook was last updated. */
+  updatedAt?: string;
+  /** ISO 8601 timestamp of the last delivery attempt. */
+  lastDeliveryAt?: string;
+  /** The status of the last delivery attempt. */
+  lastDeliveryStatus?: 'success' | 'failed';
+  /** Delivery statistics. */
+  stats?: WebhookStats;
+}
+
+/**
+ * Response from listing webhooks.
+ */
+export interface WebhookListResponse {
+  /** The list of webhooks. */
+  webhooks: WebhookData[];
+  /** Total number of webhooks. */
+  total: number;
+}
+
+/**
+ * Response from testing a webhook.
+ */
+export interface TestWebhookResponse {
+  /** Whether the test was successful. */
+  success: boolean;
+  /** The HTTP status code returned by the webhook endpoint. */
+  statusCode?: number;
+  /** The response time in milliseconds. */
+  responseTime?: number;
+  /** The response body from the webhook endpoint. */
+  responseBody?: string;
+  /** Error message if the test failed. */
+  error?: string;
+  /** The payload that was sent to the webhook endpoint. */
+  payloadSent?: unknown;
+}
+
+/**
+ * Response from rotating a webhook secret.
+ */
+export interface RotateSecretResponse {
+  /** The webhook ID. */
+  id: string;
+  /** The new webhook secret. */
+  secret: string;
+  /** ISO 8601 timestamp until which the previous secret remains valid. */
+  previousSecretValidUntil: string;
+}

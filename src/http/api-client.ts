@@ -3,8 +3,27 @@
  */
 
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
-import type { ClientConfig, InboxData, EmailData, ServerInfo, SyncStatus, RawEmailData } from '../types/index.js';
-import { ApiError, NetworkError, InboxNotFoundError, EmailNotFoundError } from '../types/index.js';
+import type {
+  ClientConfig,
+  InboxData,
+  EmailData,
+  ServerInfo,
+  SyncStatus,
+  RawEmailData,
+  CreateWebhookOptions,
+  UpdateWebhookOptions,
+  WebhookData,
+  WebhookListResponse,
+  TestWebhookResponse,
+  RotateSecretResponse,
+} from '../types/index.js';
+import {
+  ApiError,
+  NetworkError,
+  InboxNotFoundError,
+  EmailNotFoundError,
+  WebhookNotFoundError,
+} from '../types/index.js';
 import { sleep } from '../utils/sleep.js';
 
 /**
@@ -98,6 +117,9 @@ export class ApiClient {
     const message = (error.response.data as { error?: string })?.error || error.message;
 
     if (status === 404) {
+      if (message.toLowerCase().includes('webhook')) {
+        return new WebhookNotFoundError(message);
+      }
       if (message.toLowerCase().includes('inbox')) {
         return new InboxNotFoundError(message);
       }
@@ -296,6 +318,128 @@ export class ApiClient {
    */
   async deleteEmail(emailAddress: string, emailId: string): Promise<void> {
     await this.client.delete(`/api/inboxes/${encodeURIComponent(emailAddress)}/emails/${emailId}`);
+  }
+
+  // ===== Inbox Webhooks =====
+
+  /**
+   * Creates a new webhook for an inbox.
+   * @param emailAddress - The email address of the inbox
+   * @param options - Options for creating the webhook
+   * @returns Promise resolving to the created webhook data including the secret
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async createInboxWebhook(emailAddress: string, options: CreateWebhookOptions): Promise<WebhookData> {
+    const response = await this.client.post<WebhookData>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks`,
+      options,
+    );
+    return response.data;
+  }
+
+  /**
+   * Lists all webhooks for an inbox.
+   * @param emailAddress - The email address of the inbox
+   * @returns Promise resolving to the list of webhooks
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async listInboxWebhooks(emailAddress: string): Promise<WebhookListResponse> {
+    const response = await this.client.get<WebhookListResponse>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Retrieves a specific webhook by ID.
+   * @param emailAddress - The email address of the inbox
+   * @param webhookId - The unique identifier of the webhook
+   * @returns Promise resolving to the webhook data
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {WebhookNotFoundError} If the webhook does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async getInboxWebhook(emailAddress: string, webhookId: string): Promise<WebhookData> {
+    const response = await this.client.get<WebhookData>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks/${webhookId}`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Updates a specific webhook.
+   * @param emailAddress - The email address of the inbox
+   * @param webhookId - The unique identifier of the webhook
+   * @param options - Options for updating the webhook
+   * @returns Promise resolving to the updated webhook data
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {WebhookNotFoundError} If the webhook does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async updateInboxWebhook(
+    emailAddress: string,
+    webhookId: string,
+    options: UpdateWebhookOptions,
+  ): Promise<WebhookData> {
+    const response = await this.client.patch<WebhookData>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks/${webhookId}`,
+      options,
+    );
+    return response.data;
+  }
+
+  /**
+   * Deletes a specific webhook.
+   * @param emailAddress - The email address of the inbox
+   * @param webhookId - The unique identifier of the webhook
+   * @returns Promise that resolves when the webhook is deleted
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {WebhookNotFoundError} If the webhook does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async deleteInboxWebhook(emailAddress: string, webhookId: string): Promise<void> {
+    await this.client.delete(`/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks/${webhookId}`);
+  }
+
+  /**
+   * Tests a webhook by sending a test payload.
+   * @param emailAddress - The email address of the inbox
+   * @param webhookId - The unique identifier of the webhook
+   * @returns Promise resolving to the test result
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {WebhookNotFoundError} If the webhook does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async testInboxWebhook(emailAddress: string, webhookId: string): Promise<TestWebhookResponse> {
+    const response = await this.client.post<TestWebhookResponse>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks/${webhookId}/test`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Rotates the secret for a specific webhook.
+   * @param emailAddress - The email address of the inbox
+   * @param webhookId - The unique identifier of the webhook
+   * @returns Promise resolving to the new secret and validity period of the old secret
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {WebhookNotFoundError} If the webhook does not exist
+   * @throws {ApiError} If the server returns an error response
+   */
+  async rotateInboxWebhookSecret(emailAddress: string, webhookId: string): Promise<RotateSecretResponse> {
+    const response = await this.client.post<RotateSecretResponse>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks/${webhookId}/rotate-secret`,
+    );
+    return response.data;
   }
 
   // ===== Utility =====
