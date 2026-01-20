@@ -56,6 +56,8 @@ function createMockEmail(overrides: Partial<IEmail> = {}): IEmail {
     markAsRead: jest.fn(),
     delete: jest.fn(),
     getRaw: jest.fn(),
+    isSpam: () => null,
+    getSpamScore: () => null,
     ...overrides,
   };
 }

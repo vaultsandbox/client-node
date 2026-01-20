@@ -51,6 +51,8 @@ export class Inbox {
   readonly encrypted: boolean;
   /** Whether email authentication checks (SPF, DKIM, DMARC, PTR) are enabled for this inbox. */
   readonly emailAuth: boolean;
+  /** Whether spam analysis is enabled for this inbox. */
+  readonly spamAnalysis?: boolean;
 
   private keypair: Keypair | null;
   private apiClient: ApiClient;
@@ -68,6 +70,7 @@ export class Inbox {
     this.expiresAt = new Date(inboxData.expiresAt);
     this.encrypted = inboxData.encrypted;
     this.emailAuth = inboxData.emailAuth ?? false;
+    this.spamAnalysis = inboxData.spamAnalysis;
     this.keypair = keypair;
     this.apiClient = apiClient;
     this.serverPublicKey = serverPublicKey;
@@ -325,6 +328,7 @@ export class Inbox {
       expiresAt: this.expiresAt.toISOString(),
       inboxHash: this.inboxHash,
       encrypted: this.encrypted,
+      emailAuth: this.emailAuth,
       exportedAt: new Date().toISOString(),
     };
 

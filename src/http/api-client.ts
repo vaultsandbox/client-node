@@ -164,6 +164,7 @@ export class ApiClient {
    * @param emailAddress - Optional desired email address or domain
    * @param emailAuth - Optional flag to enable email authentication checks
    * @param encryption - Optional encryption preference ('encrypted' or 'plain')
+   * @param spamAnalysis - Optional flag to enable spam analysis for the inbox
    * @returns Promise resolving to the created inbox data including email address
    * @throws {NetworkError} If network communication fails
    * @throws {ApiError} If the server returns an error response
@@ -174,6 +175,7 @@ export class ApiClient {
     emailAddress?: string,
     emailAuth?: boolean,
     encryption?: 'encrypted' | 'plain',
+    spamAnalysis?: boolean,
   ): Promise<InboxData> {
     const payload: {
       clientKemPk?: string;
@@ -181,6 +183,7 @@ export class ApiClient {
       emailAddress?: string;
       emailAuth?: boolean;
       encryption?: 'encrypted' | 'plain';
+      spamAnalysis?: boolean;
     } = {};
     if (publicKey !== undefined && publicKey !== null) {
       payload.clientKemPk = publicKey;
@@ -196,6 +199,9 @@ export class ApiClient {
     }
     if (encryption !== undefined) {
       payload.encryption = encryption;
+    }
+    if (spamAnalysis !== undefined) {
+      payload.spamAnalysis = spamAnalysis;
     }
     const response = await this.client.post<InboxData>('/api/inboxes', payload);
     return response.data;

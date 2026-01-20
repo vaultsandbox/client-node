@@ -192,6 +192,7 @@ export class VaultSandboxClient {
         options.emailAddress,
         options.emailAuth,
         options.encryption,
+        options.spamAnalysis,
       );
     } catch (error) {
       // Convert 409 Conflict to InboxAlreadyExistsError

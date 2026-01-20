@@ -22,6 +22,7 @@ import type {
   ReverseDNSResult,
   AuthResultsData,
   Keypair,
+  SpamAnalysisResult,
 } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
 import { decryptRaw } from './crypto/decrypt.js';
@@ -144,6 +145,8 @@ export class Email implements IEmail {
   readonly authResults: IAuthResults;
   /** Any other metadata associated with the email. */
   readonly metadata: Record<string, unknown>;
+  /** Spam analysis results. May be undefined if spam analysis is not available. */
+  readonly spamAnalysis?: SpamAnalysisResult;
 
   private emailAddress: string;
   private apiClient: ApiClient;
@@ -184,6 +187,7 @@ export class Email implements IEmail {
       this.attachments = parsed.attachments || [];
       this.links = parsed.links || [];
       this.authResults = new AuthResults(parsed.authResults || {});
+      this.spamAnalysis = parsed.spamAnalysis;
       debug(
         'Email %s created with full parsed content (%d attachments, %d links)',
         this.id,
@@ -198,10 +202,35 @@ export class Email implements IEmail {
       this.attachments = [];
       this.links = [];
       this.authResults = new AuthResults({});
+      this.spamAnalysis = undefined;
       debug('Email %s created with metadata only', this.id);
     }
 
     this.metadata = {};
+  }
+
+  /**
+   * Returns whether the email is classified as spam.
+   *
+   * @returns `true` if spam, `false` if not spam, `null` if unknown (status !== 'analyzed')
+   */
+  isSpam(): boolean | null {
+    if (!this.spamAnalysis || this.spamAnalysis.status !== 'analyzed') {
+      return null;
+    }
+    return this.spamAnalysis.isSpam ?? false;
+  }
+
+  /**
+   * Returns the spam score for the email.
+   *
+   * @returns The spam score, or `null` if not analyzed
+   */
+  getSpamScore(): number | null {
+    if (!this.spamAnalysis || this.spamAnalysis.status !== 'analyzed') {
+      return null;
+    }
+    return this.spamAnalysis.score ?? null;
   }
 
   /**

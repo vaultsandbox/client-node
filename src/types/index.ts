@@ -46,6 +46,13 @@ export interface CreateInboxOptions {
   emailAuth?: boolean;
   /** Request encrypted or plain inbox. Omit to use server default based on encryptionPolicy. */
   encryption?: 'encrypted' | 'plain';
+  /**
+   * Spam analysis preference for this inbox.
+   * - true: Enable spam analysis for emails to this inbox
+   * - false: Disable spam analysis for this inbox
+   * - undefined/omitted: Use server default
+   */
+  spamAnalysis?: boolean;
 }
 
 /**
@@ -68,6 +75,9 @@ export interface ExportedInboxData {
 
   /** Whether this inbox uses encryption. */
   encrypted: boolean;
+
+  /** Whether email authentication checks (SPF, DKIM, DMARC, PTR) are enabled for this inbox. */
+  emailAuth: boolean;
 
   /** Server's ML-DSA-65 public key (base64url encoded, 1952 bytes decoded). Only present for encrypted inboxes. */
   serverSigPk?: string;
@@ -97,6 +107,8 @@ export interface InboxData {
   serverSigPk?: string;
   /** Whether email authentication checks (SPF, DKIM, DMARC, PTR) are enabled for this inbox. */
   emailAuth?: boolean;
+  /** Spam analysis setting for this inbox. May be omitted if using server default. */
+  spamAnalysis?: boolean;
 }
 
 /**
@@ -212,6 +224,8 @@ export interface DecryptedParsed {
   attachments: AttachmentData[];
   links?: string[];
   authResults?: AuthResultsData;
+  /** Spam analysis results - separate from authentication validations. */
+  spamAnalysis?: SpamAnalysisResult;
 }
 
 /**
@@ -325,6 +339,96 @@ export interface AuthValidation {
   failures: string[];
 }
 
+// ===== Spam Analysis =====
+
+/**
+ * Recommended action from Rspamd based on score thresholds.
+ */
+export type SpamAction = 'no action' | 'greylist' | 'add header' | 'rewrite subject' | 'soft reject' | 'reject';
+
+/**
+ * Individual spam rule/symbol that was triggered during analysis.
+ */
+export interface SpamSymbol {
+  /**
+   * Rule identifier (e.g., 'MISSING_HEADERS', 'DKIM_SIGNED', 'SPF_ALLOW').
+   * Rspamd symbol names follow conventions like:
+   * - Positive scores: spam indicators (e.g., 'FORGED_SENDER')
+   * - Negative scores: ham indicators (e.g., 'DKIM_SIGNED')
+   */
+  name: string;
+
+  /**
+   * Score contribution from this rule.
+   * Positive = increases spam score
+   * Negative = decreases spam score (indicates legitimacy)
+   */
+  score: number;
+
+  /** Human-readable description of what this rule detects. */
+  description?: string;
+
+  /** Additional context or matched values (e.g., for URL rules, contains the matched URLs). */
+  options?: string[];
+}
+
+/**
+ * Result of spam analysis for an email.
+ */
+export interface SpamAnalysisResult {
+  /**
+   * Analysis status:
+   * - 'analyzed': Successfully analyzed by Rspamd
+   * - 'skipped': Analysis was skipped (disabled globally or per-inbox)
+   * - 'error': Analysis failed (Rspamd unavailable, timeout, etc.)
+   */
+  status: 'analyzed' | 'skipped' | 'error';
+
+  /**
+   * Overall spam score (positive = more spammy).
+   * Only present when status === 'analyzed'.
+   * Typical range: -10 to +15, but can vary.
+   */
+  score?: number;
+
+  /**
+   * Required score threshold for spam classification.
+   * Emails with score >= requiredScore are considered spam.
+   * Default Rspamd threshold is typically 6.0.
+   */
+  requiredScore?: number;
+
+  /**
+   * Recommended action from Rspamd based on score thresholds.
+   */
+  action?: SpamAction;
+
+  /**
+   * Whether the email is classified as spam.
+   * true when score >= requiredScore.
+   */
+  isSpam?: boolean;
+
+  /**
+   * List of triggered spam rules/symbols with their scores.
+   * Each symbol represents a specific spam indicator detected.
+   */
+  symbols?: SpamSymbol[];
+
+  /**
+   * Time taken for spam analysis in milliseconds.
+   * Useful for performance monitoring.
+   */
+  processingTimeMs?: number;
+
+  /**
+   * Additional information about the analysis.
+   * Contains error messages when status === 'error'.
+   * Contains skip reason when status === 'skipped'.
+   */
+  info?: string;
+}
+
 // ===== Email Class Interface =====
 
 /**
@@ -355,10 +459,24 @@ export interface IEmail {
   readonly headers: Record<string, unknown>;
   readonly authResults: AuthResults;
   readonly metadata: Record<string, unknown>;
+  /** Spam analysis results. May be undefined if spam analysis is not available. */
+  readonly spamAnalysis?: SpamAnalysisResult;
 
   markAsRead(): Promise<void>;
   delete(): Promise<void>;
   getRaw(): Promise<RawEmail>;
+
+  /**
+   * Returns whether the email is classified as spam.
+   * @returns true if spam, false if not spam, null if unknown (status !== 'analyzed')
+   */
+  isSpam(): boolean | null;
+
+  /**
+   * Returns the spam score for the email.
+   * @returns The spam score, or null if not analyzed
+   */
+  getSpamScore(): number | null;
 }
 
 /**
@@ -408,6 +526,8 @@ export interface ServerInfo {
   sseConsole: boolean;
   /** List of domains allowed for inbox creation. */
   allowedDomains: string[];
+  /** Whether spam analysis (Rspamd) is enabled on this server. */
+  spamAnalysisEnabled?: boolean;
 }
 
 // ===== Subscriptions =====

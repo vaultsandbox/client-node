@@ -73,6 +73,8 @@ const createMockEmail = (id: string, subject = 'Test Subject'): IEmail => ({
   markAsRead: jest.fn(),
   delete: jest.fn(),
   getRaw: jest.fn(),
+  isSpam: () => null,
+  getSpamScore: () => null,
 });
 
 // Create mock API client

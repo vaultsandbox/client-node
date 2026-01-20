@@ -35,6 +35,10 @@ export type {
   EmailData,
   EncryptedEmailData,
   PlainEmailData,
+  // Spam analysis types
+  SpamAction,
+  SpamSymbol,
+  SpamAnalysisResult,
   // Webhook types
   WebhookEventType,
   FilterRule,

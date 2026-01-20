@@ -613,4 +613,78 @@ describeIntegration('Email Flow Integration Tests', () => {
       expect(email.links).toContain('https://example.com/unsubscribe');
     }, 40000);
   });
+
+  describe('Spam Analysis', () => {
+    it('should include spam analysis results when server has spam analysis enabled', async () => {
+      // First check if server has spam analysis enabled
+      const serverInfo = await client.getServerInfo();
+
+      // Create inbox with spam analysis enabled (if supported)
+      const inbox = await client.createInbox({ spamAnalysis: true });
+      createdInboxes.push(inbox);
+
+      await smtp.sendEmail('sender@example.com', inbox.emailAddress, 'Spam Analysis Test', 'Testing spam analysis');
+
+      const email = await inbox.waitForEmail({ timeout: 30000 });
+
+      // If server has spam analysis enabled, we should get results
+      if (serverInfo.spamAnalysisEnabled) {
+        expect(email.spamAnalysis).toBeDefined();
+        expect(email.spamAnalysis?.status).toBeDefined();
+        expect(['analyzed', 'skipped', 'error']).toContain(email.spamAnalysis?.status);
+
+        // If analyzed, verify structure
+        if (email.spamAnalysis?.status === 'analyzed') {
+          expect(typeof email.spamAnalysis.score).toBe('number');
+          expect(typeof email.spamAnalysis.requiredScore).toBe('number');
+          expect(typeof email.spamAnalysis.isSpam).toBe('boolean');
+          expect(email.spamAnalysis.action).toBeDefined();
+          expect(Array.isArray(email.spamAnalysis.symbols)).toBe(true);
+
+          // Test helper methods
+          const isSpam = email.isSpam();
+          expect(typeof isSpam).toBe('boolean');
+
+          const score = email.getSpamScore();
+          expect(typeof score).toBe('number');
+          expect(score).toBe(email.spamAnalysis.score);
+        }
+      } else {
+        // Server doesn't have spam analysis - results may be undefined or skipped
+        if (email.spamAnalysis) {
+          expect(['skipped', 'error']).toContain(email.spamAnalysis.status);
+        }
+        // Helper methods should return null when not analyzed
+        expect(email.isSpam()).toBeNull();
+        expect(email.getSpamScore()).toBeNull();
+      }
+    }, 40000);
+
+    it('should handle spam analysis helper methods correctly', async () => {
+      const inbox = await client.createInbox({ spamAnalysis: true });
+      createdInboxes.push(inbox);
+
+      await smtp.sendEmail(
+        'sender@example.com',
+        inbox.emailAddress,
+        'Helper Methods Test',
+        'Testing isSpam and getSpamScore',
+      );
+
+      const email = await inbox.waitForEmail({ timeout: 30000 });
+
+      // Test that helper methods don't throw
+      const isSpamResult = email.isSpam();
+      const spamScore = email.getSpamScore();
+
+      // Either both return values or both return null
+      if (email.spamAnalysis?.status === 'analyzed') {
+        expect(typeof isSpamResult).toBe('boolean');
+        expect(typeof spamScore).toBe('number');
+      } else {
+        expect(isSpamResult).toBeNull();
+        expect(spamScore).toBeNull();
+      }
+    }, 40000);
+  });
 });
