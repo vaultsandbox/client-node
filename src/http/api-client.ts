@@ -16,6 +16,8 @@ import type {
   WebhookListResponse,
   TestWebhookResponse,
   RotateSecretResponse,
+  ChaosConfigRequest,
+  ChaosConfigResponse,
 } from '../types/index.js';
 import {
   ApiError,
@@ -165,6 +167,7 @@ export class ApiClient {
    * @param emailAuth - Optional flag to enable email authentication checks
    * @param encryption - Optional encryption preference ('encrypted' or 'plain')
    * @param spamAnalysis - Optional flag to enable spam analysis for the inbox
+   * @param chaos - Optional chaos engineering configuration for the inbox
    * @returns Promise resolving to the created inbox data including email address
    * @throws {NetworkError} If network communication fails
    * @throws {ApiError} If the server returns an error response
@@ -176,6 +179,7 @@ export class ApiClient {
     emailAuth?: boolean,
     encryption?: 'encrypted' | 'plain',
     spamAnalysis?: boolean,
+    chaos?: ChaosConfigRequest,
   ): Promise<InboxData> {
     const payload: {
       clientKemPk?: string;
@@ -184,6 +188,7 @@ export class ApiClient {
       emailAuth?: boolean;
       encryption?: 'encrypted' | 'plain';
       spamAnalysis?: boolean;
+      chaos?: ChaosConfigRequest;
     } = {};
     if (publicKey !== undefined && publicKey !== null) {
       payload.clientKemPk = publicKey;
@@ -202,6 +207,9 @@ export class ApiClient {
     }
     if (spamAnalysis !== undefined) {
       payload.spamAnalysis = spamAnalysis;
+    }
+    if (chaos !== undefined) {
+      payload.chaos = chaos;
     }
     const response = await this.client.post<InboxData>('/api/inboxes', payload);
     return response.data;
@@ -446,6 +454,52 @@ export class ApiClient {
       `/api/inboxes/${encodeURIComponent(emailAddress)}/webhooks/${webhookId}/rotate-secret`,
     );
     return response.data;
+  }
+
+  // ===== Chaos Configuration =====
+
+  /**
+   * Gets the chaos configuration for an inbox.
+   * @param emailAddress - The email address of the inbox
+   * @returns Promise resolving to the chaos configuration
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {ApiError} If chaos is disabled globally (403) or other error
+   */
+  async getChaosConfig(emailAddress: string): Promise<ChaosConfigResponse> {
+    const response = await this.client.get<ChaosConfigResponse>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/chaos`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Sets or updates the chaos configuration for an inbox.
+   * @param emailAddress - The email address of the inbox
+   * @param config - The chaos configuration to apply
+   * @returns Promise resolving to the updated chaos configuration
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {ApiError} If chaos is disabled globally (403), validation fails (400), or other error
+   */
+  async setChaosConfig(emailAddress: string, config: ChaosConfigRequest): Promise<ChaosConfigResponse> {
+    const response = await this.client.post<ChaosConfigResponse>(
+      `/api/inboxes/${encodeURIComponent(emailAddress)}/chaos`,
+      config,
+    );
+    return response.data;
+  }
+
+  /**
+   * Disables all chaos for an inbox.
+   * @param emailAddress - The email address of the inbox
+   * @returns Promise that resolves when chaos is disabled
+   * @throws {NetworkError} If network communication fails
+   * @throws {InboxNotFoundError} If the inbox does not exist
+   * @throws {ApiError} If chaos is disabled globally (403) or other error
+   */
+  async disableChaos(emailAddress: string): Promise<void> {
+    await this.client.delete(`/api/inboxes/${encodeURIComponent(emailAddress)}/chaos`);
   }
 
   // ===== Utility =====

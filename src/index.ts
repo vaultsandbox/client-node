@@ -51,6 +51,16 @@ export type {
   WebhookListResponse,
   TestWebhookResponse,
   RotateSecretResponse,
+  // Chaos configuration types
+  GreylistTrackBy,
+  ChaosErrorType,
+  LatencyConfig,
+  ConnectionDropConfig,
+  RandomErrorConfig,
+  GreylistConfig,
+  BlackholeConfig,
+  ChaosConfigRequest,
+  ChaosConfigResponse,
 } from './types/index.js';
 
 // Errors - all custom errors should be exported for proper error handling

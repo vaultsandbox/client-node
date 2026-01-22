@@ -27,6 +27,8 @@ import type {
   WebhookListResponse,
   TestWebhookResponse,
   RotateSecretResponse,
+  ChaosConfigRequest,
+  ChaosConfigResponse,
 } from './types/index.js';
 import { TimeoutError, StrategyError } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
@@ -555,5 +557,46 @@ export class Inbox {
     const result = await this.apiClient.rotateInboxWebhookSecret(this.emailAddress, webhookId);
     debug('Successfully rotated secret for webhook %s', webhookId);
     return result;
+  }
+
+  // ===== Chaos Configuration =====
+
+  /**
+   * Gets the chaos configuration for this inbox.
+   *
+   * @returns A promise that resolves to the chaos configuration.
+   * @throws {ApiError} If chaos is disabled globally on the server (403).
+   */
+  async getChaosConfig(): Promise<ChaosConfigResponse> {
+    debug('Getting chaos config for inbox %s', this.emailAddress);
+    const config = await this.apiClient.getChaosConfig(this.emailAddress);
+    debug('Successfully retrieved chaos config for inbox %s', this.emailAddress);
+    return config;
+  }
+
+  /**
+   * Sets or updates the chaos configuration for this inbox.
+   *
+   * @param config - The chaos configuration to apply.
+   * @returns A promise that resolves to the updated chaos configuration.
+   * @throws {ApiError} If chaos is disabled globally on the server (403) or validation fails (400).
+   */
+  async setChaosConfig(config: ChaosConfigRequest): Promise<ChaosConfigResponse> {
+    debug('Setting chaos config for inbox %s: enabled=%s', this.emailAddress, config.enabled);
+    const result = await this.apiClient.setChaosConfig(this.emailAddress, config);
+    debug('Successfully set chaos config for inbox %s', this.emailAddress);
+    return result;
+  }
+
+  /**
+   * Disables all chaos for this inbox.
+   *
+   * @returns A promise that resolves when chaos is disabled.
+   * @throws {ApiError} If chaos is disabled globally on the server (403).
+   */
+  async disableChaos(): Promise<void> {
+    debug('Disabling chaos for inbox %s', this.emailAddress);
+    await this.apiClient.disableChaos(this.emailAddress);
+    debug('Successfully disabled chaos for inbox %s', this.emailAddress);
   }
 }

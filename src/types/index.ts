@@ -53,6 +53,11 @@ export interface CreateInboxOptions {
    * - undefined/omitted: Use server default
    */
   spamAnalysis?: boolean;
+  /**
+   * Chaos engineering configuration for this inbox.
+   * Only available when the server has chaos engineering enabled (chaosEnabled: true in server info).
+   */
+  chaos?: ChaosConfigRequest;
 }
 
 /**
@@ -528,6 +533,8 @@ export interface ServerInfo {
   allowedDomains: string[];
   /** Whether spam analysis (Rspamd) is enabled on this server. */
   spamAnalysisEnabled?: boolean;
+  /** Whether chaos engineering features are enabled on this server. */
+  chaosEnabled?: boolean;
 }
 
 // ===== Subscriptions =====
@@ -902,3 +909,110 @@ export interface RotateSecretResponse {
   /** ISO 8601 timestamp until which the previous secret remains valid. */
   previousSecretValidUntil: string;
 }
+
+// ===== Chaos Configuration =====
+
+/**
+ * How to track senders for greylisting.
+ */
+export type GreylistTrackBy = 'ip' | 'sender' | 'ip_sender';
+
+/**
+ * Types of SMTP errors for random error chaos.
+ */
+export type ChaosErrorType = 'temporary' | 'permanent';
+
+/**
+ * Latency injection configuration for chaos testing.
+ * Injects artificial delays into email processing.
+ */
+export interface LatencyConfig {
+  /** Enable latency injection. */
+  enabled: boolean;
+  /** Minimum delay in milliseconds (default: 500). */
+  minDelayMs?: number;
+  /** Maximum delay in milliseconds (default: 10000, max: 60000). */
+  maxDelayMs?: number;
+  /** Randomize delay within range. If false, uses maxDelayMs (default: true). */
+  jitter?: boolean;
+  /** Probability of applying delay, 0.0-1.0 (default: 1.0). */
+  probability?: number;
+}
+
+/**
+ * Connection drop configuration for chaos testing.
+ * Simulates connection failures by dropping the SMTP connection.
+ */
+export interface ConnectionDropConfig {
+  /** Enable connection dropping. */
+  enabled: boolean;
+  /** Probability of dropping the connection, 0.0-1.0 (default: 1.0). */
+  probability?: number;
+  /** Use graceful close (FIN) vs abrupt (RST) (default: true). */
+  graceful?: boolean;
+}
+
+/**
+ * Random error configuration for chaos testing.
+ * Returns random SMTP error codes.
+ */
+export interface RandomErrorConfig {
+  /** Enable random error generation. */
+  enabled: boolean;
+  /** Probability of returning an error, 0.0-1.0 (default: 0.1). */
+  errorRate?: number;
+  /** Types of errors to return (default: ['temporary']). */
+  errorTypes?: ChaosErrorType[];
+}
+
+/**
+ * Greylist configuration for chaos testing.
+ * Simulates greylisting behavior (reject first attempt, accept on retry).
+ */
+export interface GreylistConfig {
+  /** Enable greylisting simulation. */
+  enabled: boolean;
+  /** Window for tracking retry attempts in milliseconds (default: 300000). */
+  retryWindowMs?: number;
+  /** Number of attempts before accepting (default: 2). */
+  maxAttempts?: number;
+  /** How to identify unique senders (default: 'ip_sender'). */
+  trackBy?: GreylistTrackBy;
+}
+
+/**
+ * Blackhole configuration for chaos testing.
+ * Accepts emails but silently discards them (does not store).
+ */
+export interface BlackholeConfig {
+  /** Enable blackhole mode. */
+  enabled: boolean;
+  /** Whether to still trigger webhooks (default: false). */
+  triggerWebhooks?: boolean;
+}
+
+/**
+ * Request object for setting chaos configuration on an inbox.
+ */
+export interface ChaosConfigRequest {
+  /** Master switch for chaos on this inbox. */
+  enabled: boolean;
+  /** ISO 8601 timestamp to auto-disable chaos after. */
+  expiresAt?: string;
+  /** Latency injection settings. */
+  latency?: LatencyConfig;
+  /** Connection drop settings. */
+  connectionDrop?: ConnectionDropConfig;
+  /** Random error settings. */
+  randomError?: RandomErrorConfig;
+  /** Greylisting settings. */
+  greylist?: GreylistConfig;
+  /** Blackhole mode settings. */
+  blackhole?: BlackholeConfig;
+}
+
+/**
+ * Response object for chaos configuration.
+ * Returned when getting or setting chaos configuration.
+ */
+export type ChaosConfigResponse = ChaosConfigRequest;
