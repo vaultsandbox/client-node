@@ -62,7 +62,7 @@
   },
   "dependencies": {
     "@noble/post-quantum": "0.5.4",
-    "axios": "1.13.2",
+    "axios": "1.13.3",
     "debug": "4.4.3",
     "eventsource": "4.1.0"
   },
