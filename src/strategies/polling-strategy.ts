@@ -5,7 +5,7 @@
 import createDebug from 'debug';
 import type { ApiClient } from '../http/api-client.js';
 import type { Keypair, EmailData, IEmail, WaitOptions, Subscription } from '../types/index.js';
-import { TimeoutError, InboxNotFoundError } from '../types/index.js';
+import { TimeoutError, InboxNotFoundError, DecryptionError } from '../types/index.js';
 import {
   decryptEmailData,
   decodeBase64EmailData,
@@ -38,6 +38,20 @@ export class PollingStrategy implements DeliveryStrategy {
     this.maxBackoff = config.maxBackoff ?? 30000;
     this.backoffMultiplier = config.backoffMultiplier ?? 1.5;
     this.jitterFactor = config.jitterFactor ?? 0.3;
+  }
+
+  /**
+   * Validates that a keypair exists for encrypted email operations.
+   * @param keypair - The keypair to validate
+   * @param emailAddress - The email address for error context
+   * @returns The validated keypair
+   * @throws DecryptionError if keypair is null
+   */
+  private validateKeypair(keypair: Keypair | null, emailAddress: string): Keypair {
+    if (!keypair) {
+      throw new DecryptionError(`Received encrypted email for inbox ${emailAddress} but no keypair available`);
+    }
+    return keypair;
   }
 
   /**
@@ -90,9 +104,10 @@ export class PollingStrategy implements DeliveryStrategy {
           break;
         }
 
-        // Calculate wait time with exponential backoff and jitter
-        const jitter = Math.random() * this.jitterFactor * currentBackoff;
-        const desiredWaitTime = Math.min(currentBackoff + jitter, this.maxBackoff);
+        // Calculate wait time with exponential backoff and bidirectional jitter
+        // Apply jitter as +/- percentage of current backoff, with floor at pollInterval
+        const jitter = this.jitterFactor * currentBackoff * (Math.random() - 0.5) * 2;
+        const desiredWaitTime = Math.max(pollInterval, Math.min(currentBackoff + jitter, this.maxBackoff));
 
         // Limit sleep to remaining time to avoid overshooting timeout
         const waitTime = Math.min(desiredWaitTime, remainingTime);
@@ -134,7 +149,7 @@ export class PollingStrategy implements DeliveryStrategy {
 
     for (const emailData of emailsData) {
       const email = isEncryptedEmailData(emailData)
-        ? await decryptEmailData(emailData, keypair!, emailAddress, this.apiClient)
+        ? await decryptEmailData(emailData, this.validateKeypair(keypair, emailAddress), emailAddress, this.apiClient)
         : decodeBase64EmailData(emailData, emailAddress, this.apiClient);
       emails.push(email);
     }
@@ -152,6 +167,7 @@ export class PollingStrategy implements DeliveryStrategy {
     callback: (email: IEmail) => void | Promise<void>,
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
+    onError?: (error: Error) => void,
   ): Subscription {
     let isActive = true;
     const localCache = emailCache ?? new Map<string, EmailData>();
@@ -175,7 +191,12 @@ export class PollingStrategy implements DeliveryStrategy {
                   // Fetch full email content for new emails
                   const fullEmailData = await this.apiClient.getEmail(emailAddress, emailData.id);
                   const email = isEncryptedEmailData(fullEmailData)
-                    ? await decryptEmailData(fullEmailData, keypair!, emailAddress, this.apiClient)
+                    ? await decryptEmailData(
+                        fullEmailData,
+                        this.validateKeypair(keypair, emailAddress),
+                        emailAddress,
+                        this.apiClient,
+                      )
                     : decodeBase64EmailData(fullEmailData, emailAddress, this.apiClient);
 
                   const callbackResult = callback(email);
@@ -203,6 +224,13 @@ export class PollingStrategy implements DeliveryStrategy {
           }
         } catch (error) {
           debug('Error polling for emails: %O', error);
+          if (onError) {
+            try {
+              onError(error instanceof Error ? error : new Error(String(error)));
+            } catch (e) {
+              debug('Error in error callback: %O', e);
+            }
+          }
         }
 
         if (isActive) {

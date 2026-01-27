@@ -8,6 +8,8 @@ import { fromBase64Url, ensureOwnBuffer, concatBuffers } from './utils.js';
 import { SignatureVerificationError } from '../types/index.js';
 import type { EncryptedData } from '../types/index.js';
 import { HKDF_CONTEXT, MLDSA_PUBLIC_KEY_SIZE } from './constants.js';
+// Type-only import to avoid circular dependency at runtime
+import type { DecodedPayload } from './decrypt.js';
 
 /**
  * Builds the algorithm ciphersuite string from algs object
@@ -41,18 +43,19 @@ function buildTranscript(
  * IMPORTANT: Must be called BEFORE decryption for security
  *
  * @param encryptedData - The encrypted data with signature
+ * @param decoded - Optional pre-decoded payload fields to avoid redundant decoding
  * @returns True if signature is valid
  * @throws SignatureVerificationError if verification fails
  */
-export function verifySignature(encryptedData: EncryptedData): boolean {
+export function verifySignature(encryptedData: EncryptedData, decoded?: DecodedPayload): boolean {
   try {
-    // 1. Decode all components
-    const signature = fromBase64Url(encryptedData.sig);
-    const ctKem = fromBase64Url(encryptedData.ct_kem);
-    const nonceBytes = fromBase64Url(encryptedData.nonce);
-    const aadBytes = fromBase64Url(encryptedData.aad);
-    const ciphertextBytes = fromBase64Url(encryptedData.ciphertext);
-    const serverSigPk = fromBase64Url(encryptedData.server_sig_pk);
+    // 1. Use pre-decoded values or decode components
+    const signature = decoded?.sig ?? fromBase64Url(encryptedData.sig);
+    const ctKem = decoded?.ctKem ?? fromBase64Url(encryptedData.ct_kem);
+    const nonceBytes = decoded?.nonce ?? fromBase64Url(encryptedData.nonce);
+    const aadBytes = decoded?.aad ?? fromBase64Url(encryptedData.aad);
+    const ciphertextBytes = decoded?.ciphertext ?? fromBase64Url(encryptedData.ciphertext);
+    const serverSigPk = decoded?.serverSigPk ?? fromBase64Url(encryptedData.server_sig_pk);
 
     // 2. Build the transcript (exactly as the server did)
     const algsCiphersuite = buildAlgsCiphersuite(encryptedData.algs);

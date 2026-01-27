@@ -30,7 +30,7 @@ import type {
   ChaosConfigRequest,
   ChaosConfigResponse,
 } from './types/index.js';
-import { TimeoutError, StrategyError } from './types/index.js';
+import { TimeoutError, StrategyError, DecryptionError } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
 import type { DeliveryStrategy } from './strategies/delivery-strategy.js';
 
@@ -61,6 +61,7 @@ export class Inbox {
   private serverPublicKey: string | null;
   private strategy: DeliveryStrategy | null = null;
   private emailCache: Map<string, EmailData> = new Map();
+  private activeSubscriptions: Set<Subscription> = new Set();
 
   /**
    * @internal
@@ -96,6 +97,18 @@ export class Inbox {
   }
 
   /**
+   * Validates that a keypair exists for encrypted operations.
+   * @returns The validated keypair
+   * @throws DecryptionError if keypair is null
+   */
+  private requireKeypair(): Keypair {
+    if (!this.keypair) {
+      throw new DecryptionError(`Encrypted operation requires keypair but inbox ${this.emailAddress} has none`);
+    }
+    return this.keypair;
+  }
+
+  /**
    * Retrieves all emails from the inbox with full content.
    *
    * @returns A promise that resolves to an array of `Email` instances.
@@ -108,7 +121,7 @@ export class Inbox {
 
     for (const emailData of emailsData) {
       const email = isEncryptedEmailData(emailData)
-        ? await decryptEmailData(emailData, this.keypair!, this.emailAddress, this.apiClient)
+        ? await decryptEmailData(emailData, this.requireKeypair(), this.emailAddress, this.apiClient)
         : decodeBase64EmailData(emailData, this.emailAddress, this.apiClient);
       emails.push(email);
     }
@@ -131,7 +144,7 @@ export class Inbox {
     for (const emailData of emailsData) {
       let metadata: DecryptedMetadata;
       if (isEncryptedEmailData(emailData)) {
-        metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, this.keypair!);
+        metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, this.requireKeypair());
       } else {
         // Plain email - decode base64 metadata
         const metadataJson = Buffer.from(emailData.metadata, 'base64').toString('utf-8');
@@ -160,7 +173,7 @@ export class Inbox {
     debug('Retrieving email %s from inbox %s', emailId, this.emailAddress);
     const emailData = await this.apiClient.getEmail(this.emailAddress, emailId);
     const email = isEncryptedEmailData(emailData)
-      ? await decryptEmailData(emailData, this.keypair!, this.emailAddress, this.apiClient)
+      ? await decryptEmailData(emailData, this.requireKeypair(), this.emailAddress, this.apiClient)
       : decodeBase64EmailData(emailData, this.emailAddress, this.apiClient);
     debug('Successfully retrieved and processed email %s', emailId);
     return email;
@@ -177,7 +190,7 @@ export class Inbox {
     const rawEmailData = await this.apiClient.getRawEmail(this.emailAddress, emailId);
     let raw: string;
     if (rawEmailData.encryptedRaw) {
-      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair!);
+      raw = await decryptRaw(rawEmailData.encryptedRaw, this.requireKeypair());
     } else if (rawEmailData.raw) {
       // Plain email - decode base64
       raw = Buffer.from(rawEmailData.raw, 'base64').toString('utf-8');
@@ -232,6 +245,7 @@ export class Inbox {
     return new Promise<void>((resolve, reject) => {
       let subscription: Subscription | undefined;
       let timeoutTimer: NodeJS.Timeout | undefined;
+      let resolved = false;
 
       // Centralized cleanup to prevent memory leaks
       /* istanbul ignore next 4 - defensive checks for race conditions */
@@ -241,25 +255,36 @@ export class Inbox {
       };
 
       timeoutTimer = setTimeout(() => {
+        /* istanbul ignore next - race condition guard */
+        if (resolved) return;
+        resolved = true;
         cleanup();
         debug('Timeout reached while waiting for %d emails in inbox %s', count, this.emailAddress);
         reject(new TimeoutError(`Inbox did not receive ${count} emails within timeout`));
       }, timeout);
 
       subscription = this.onNewEmail(async () => {
+        /* istanbul ignore next - race condition guard */
+        if (resolved) return;
+
         try {
           const syncStatus = await this.getSyncStatus();
           debug('Current email count in inbox %s: %d', this.emailAddress, syncStatus.emailCount);
 
           if (syncStatus.emailCount >= count) {
+            resolved = true;
             cleanup();
             debug('Target email count %d reached in inbox %s', count, this.emailAddress);
             resolve();
           }
         } catch (error) {
-          cleanup();
-          debug('Error checking sync status: %O', error);
-          reject(error);
+          /* istanbul ignore next - race condition guard */
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            debug('Error checking sync status: %O', error);
+            reject(error);
+          }
         }
       });
     });
@@ -280,7 +305,36 @@ export class Inbox {
     }
 
     debug('Subscribing to new emails for inbox %s', this.emailAddress);
-    return this.strategy.subscribe(this.emailAddress, this.inboxHash, this.keypair, callback);
+    const subscription = this.strategy.subscribe(this.emailAddress, this.inboxHash, this.keypair, callback);
+
+    // Track the subscription and wrap unsubscribe to remove from tracking
+    const trackedSubscription: Subscription = {
+      unsubscribe: () => {
+        subscription.unsubscribe();
+        this.activeSubscriptions.delete(trackedSubscription);
+      },
+    };
+
+    this.activeSubscriptions.add(trackedSubscription);
+    return trackedSubscription;
+  }
+
+  /**
+   * Unsubscribes from all active email subscriptions for this inbox.
+   *
+   * This method is called during client shutdown to ensure clean cleanup.
+   * It is safe to call multiple times.
+   */
+  unsubscribeAll(): void {
+    debug('Unsubscribing all %d subscriptions for inbox %s', this.activeSubscriptions.size, this.emailAddress);
+    for (const subscription of this.activeSubscriptions) {
+      try {
+        subscription.unsubscribe();
+      } catch (error) {
+        debug('Error unsubscribing: %O', error);
+      }
+    }
+    this.activeSubscriptions.clear();
   }
 
   /**

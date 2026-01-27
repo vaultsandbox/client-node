@@ -12,6 +12,7 @@ export { Email } from './email.js';
 // Types
 export type {
   ClientConfig,
+  CloseOptions,
   CreateInboxOptions,
   InboxData,
   SyncStatus,

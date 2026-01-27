@@ -19,10 +19,50 @@ import {
 } from './constants.js';
 
 /**
+ * Pre-decoded payload fields to avoid redundant base64 decoding.
+ * Used to pass decoded values between validation, signature verification, and decryption.
+ */
+export interface DecodedPayload {
+  ctKem: Uint8Array;
+  nonce: Uint8Array;
+  aad: Uint8Array;
+  ciphertext: Uint8Array;
+  sig: Uint8Array;
+  serverSigPk: Uint8Array;
+}
+
+/**
+ * Decodes all base64url-encoded fields from the encrypted payload.
+ * Call once and pass the result to validatePayload, verifySignature, and decrypt operations.
+ *
+ * @param encryptedData - The encrypted data from the server
+ * @returns Pre-decoded payload fields
+ * @throws DecryptionError if decoding fails
+ */
+export function decodePayload(encryptedData: EncryptedData): DecodedPayload {
+  try {
+    return {
+      ctKem: fromBase64Url(encryptedData.ct_kem),
+      nonce: fromBase64Url(encryptedData.nonce),
+      aad: fromBase64Url(encryptedData.aad),
+      ciphertext: fromBase64Url(encryptedData.ciphertext),
+      sig: fromBase64Url(encryptedData.sig),
+      serverSigPk: fromBase64Url(encryptedData.server_sig_pk),
+    };
+  } catch (error) {
+    /* istanbul ignore next - defensive for non-Error exceptions */
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DecryptionError(`Failed to decode payload: ${message}`);
+  }
+}
+
+/**
  * Validates the encrypted payload structure and sizes per spec Section 8.1
+ * @param encryptedData - The encrypted payload metadata
+ * @param decoded - Optional pre-decoded payload fields to avoid redundant decoding
  * @throws DecryptionError if validation fails
  */
-function validatePayload(encryptedData: EncryptedData): void {
+function validatePayload(encryptedData: EncryptedData, decoded?: DecodedPayload): void {
   // Step 2: Validate version
   if (encryptedData.v !== PROTOCOL_VERSION) {
     throw new DecryptionError(`Unsupported protocol version: ${encryptedData.v}, expected ${PROTOCOL_VERSION}`);
@@ -43,34 +83,26 @@ function validatePayload(encryptedData: EncryptedData): void {
     throw new DecryptionError(`Unsupported KDF algorithm: ${algs.kdf}`);
   }
 
-  // Step 4: Validate decoded sizes (decode first, then check)
-  try {
-    const ctKem = fromBase64Url(encryptedData.ct_kem);
-    if (ctKem.length !== MLKEM_CIPHERTEXT_SIZE) {
-      throw new DecryptionError(`Invalid ct_kem size: expected ${MLKEM_CIPHERTEXT_SIZE}, got ${ctKem.length}`);
-    }
+  // Step 4: Validate decoded sizes (use pre-decoded values if available)
+  /* istanbul ignore next - decoded is always passed from decrypt(), fallback is defensive */
+  const { ctKem, nonce, sig, serverSigPk } = decoded ?? decodePayload(encryptedData);
 
-    const nonce = fromBase64Url(encryptedData.nonce);
-    if (nonce.length !== AES_NONCE_SIZE) {
-      throw new DecryptionError(`Invalid nonce size: expected ${AES_NONCE_SIZE}, got ${nonce.length}`);
-    }
+  if (ctKem.length !== MLKEM_CIPHERTEXT_SIZE) {
+    throw new DecryptionError(`Invalid ct_kem size: expected ${MLKEM_CIPHERTEXT_SIZE}, got ${ctKem.length}`);
+  }
 
-    const sig = fromBase64Url(encryptedData.sig);
-    if (sig.length !== MLDSA_SIGNATURE_SIZE) {
-      throw new DecryptionError(`Invalid signature size: expected ${MLDSA_SIGNATURE_SIZE}, got ${sig.length}`);
-    }
+  if (nonce.length !== AES_NONCE_SIZE) {
+    throw new DecryptionError(`Invalid nonce size: expected ${AES_NONCE_SIZE}, got ${nonce.length}`);
+  }
 
-    const serverSigPk = fromBase64Url(encryptedData.server_sig_pk);
-    if (serverSigPk.length !== MLDSA_PUBLIC_KEY_SIZE) {
-      throw new DecryptionError(
-        `Invalid server public key size: expected ${MLDSA_PUBLIC_KEY_SIZE}, got ${serverSigPk.length}`,
-      );
-    }
-  } catch (error) {
-    if (error instanceof DecryptionError) throw error;
-    /* istanbul ignore next - defensive for non-Error exceptions */
-    const message = error instanceof Error ? error.message : String(error);
-    throw new DecryptionError(`Failed to decode payload: ${message}`);
+  if (sig.length !== MLDSA_SIGNATURE_SIZE) {
+    throw new DecryptionError(`Invalid signature size: expected ${MLDSA_SIGNATURE_SIZE}, got ${sig.length}`);
+  }
+
+  if (serverSigPk.length !== MLDSA_PUBLIC_KEY_SIZE) {
+    throw new DecryptionError(
+      `Invalid server public key size: expected ${MLDSA_PUBLIC_KEY_SIZE}, got ${serverSigPk.length}`,
+    );
   }
 }
 
@@ -85,17 +117,17 @@ function validatePayload(encryptedData: EncryptedData): void {
  */
 export async function decrypt(encryptedData: EncryptedData, keypair: Keypair): Promise<Uint8Array> {
   try {
-    // Steps 1-4: Parse and validate payload (version, algorithms, sizes)
-    validatePayload(encryptedData);
+    // Step 1: Decode all base64url fields once
+    const decoded = decodePayload(encryptedData);
+
+    // Steps 2-4: Parse and validate payload (version, algorithms, sizes)
+    validatePayload(encryptedData, decoded);
 
     // Step 6: SECURITY: Verify signature BEFORE decryption (prevent tampering)
-    verifySignature(encryptedData);
+    verifySignature(encryptedData, decoded);
 
-    // Step 7-9: Decode, decapsulate, derive key, decrypt
-    const ctKem = fromBase64Url(encryptedData.ct_kem);
-    const nonceBytes = fromBase64Url(encryptedData.nonce);
-    const aadBytes = fromBase64Url(encryptedData.aad);
-    const ciphertextBytes = fromBase64Url(encryptedData.ciphertext);
+    // Step 7-9: Use pre-decoded values for decapsulation, key derivation, and decryption
+    const { ctKem, nonce: nonceBytes, aad: aadBytes, ciphertext: ciphertextBytes } = decoded;
 
     // 2. KEM Decapsulation to get shared secret
     const sharedSecret = ml_kem768.decapsulate(ctKem, ensureOwnBuffer(keypair.secretKey));

@@ -28,6 +28,18 @@ import {
 } from '../types/index.js';
 import { sleep } from '../utils/sleep.js';
 
+/** Default HTTP request timeout in milliseconds */
+const DEFAULT_HTTP_TIMEOUT_MS = 30000;
+
+/** Default maximum number of retry attempts for failed requests */
+const DEFAULT_MAX_RETRIES = 3;
+
+/** Default delay between retries in milliseconds (used as base for exponential backoff) */
+const DEFAULT_RETRY_DELAY_MS = 1000;
+
+/** Default HTTP status codes that trigger automatic retry */
+const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+
 /**
  * Extended AxiosRequestConfig with retry tracking
  */
@@ -56,7 +68,7 @@ export class ApiClient {
         'X-API-Key': config.apiKey,
         'Content-Type': 'application/json',
       },
-      timeout: 30000,
+      timeout: DEFAULT_HTTP_TIMEOUT_MS,
     });
 
     // Setup retry logic
@@ -73,9 +85,9 @@ export class ApiClient {
       (response) => response,
       async (error: AxiosError) => {
         const config = error.config;
-        const maxRetries = this.config.maxRetries ?? 3;
-        const retryDelay = this.config.retryDelay ?? 1000;
-        const retryOn = this.config.retryOn ?? [408, 429, 500, 502, 503, 504];
+        const maxRetries = this.config.maxRetries ?? DEFAULT_MAX_RETRIES;
+        const retryDelay = this.config.retryDelay ?? DEFAULT_RETRY_DELAY_MS;
+        const retryOn = this.config.retryOn ?? DEFAULT_RETRY_STATUS_CODES;
 
         // Early return if no config
         if (!config) {
@@ -115,17 +127,32 @@ export class ApiClient {
     }
 
     const status = error.response.status;
+    const data = error.response.data as { error?: string; errorType?: string } | undefined;
     /* istanbul ignore next - defensive fallback when server doesn't return error message */
-    const message = (error.response.data as { error?: string })?.error || error.message;
+    const message = data?.error || error.message;
 
+    // Prefer structured error type if available
+    if (data?.errorType) {
+      switch (data.errorType) {
+        case 'inbox_not_found':
+          return new InboxNotFoundError(message);
+        case 'email_not_found':
+          return new EmailNotFoundError(message);
+        case 'webhook_not_found':
+          return new WebhookNotFoundError(message);
+      }
+    }
+
+    // Fallback to message-based detection for backwards compatibility
     if (status === 404) {
-      if (message.toLowerCase().includes('webhook')) {
+      const lowerMessage = message.toLowerCase();
+      if (lowerMessage.includes('webhook')) {
         return new WebhookNotFoundError(message);
       }
-      if (message.toLowerCase().includes('inbox')) {
+      if (lowerMessage.includes('inbox')) {
         return new InboxNotFoundError(message);
       }
-      if (message.toLowerCase().includes('email')) {
+      if (lowerMessage.includes('email')) {
         return new EmailNotFoundError(message);
       }
     }

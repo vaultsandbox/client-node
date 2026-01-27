@@ -89,6 +89,7 @@ export class VaultSandboxClient {
   private config: ClientConfig;
   private serverPublicKey: string | null = null;
   private encryptionPolicy: EncryptionPolicy | null = null;
+  private maxTtl: number | null = null;
   private inboxes: Map<string, Inbox> = new Map();
   private strategy: DeliveryStrategy | null = null;
 
@@ -114,6 +115,7 @@ export class VaultSandboxClient {
     const serverInfo = await this.apiClient.getServerInfo();
     this.serverPublicKey = serverInfo.serverSigPk;
     this.encryptionPolicy = serverInfo.encryptionPolicy;
+    this.maxTtl = serverInfo.maxTtl;
 
     // Create delivery strategy based on config
     // Note: SSE for email events (/api/events) is always available
@@ -150,6 +152,7 @@ export class VaultSandboxClient {
         reconnectInterval: this.config.sseReconnectInterval ?? 5000,
         maxReconnectAttempts: this.config.sseMaxReconnectAttempts ?? 10,
         backoffMultiplier: 2,
+        maxCacheSize: this.config.sseMaxCacheSize,
       });
     }
 
@@ -177,6 +180,19 @@ export class VaultSandboxClient {
    */
   async createInbox(options: CreateInboxOptions = {}): Promise<Inbox> {
     await this.ensureInitialized();
+
+    // Validate TTL if provided
+    if (options.ttl !== undefined) {
+      if (typeof options.ttl !== 'number' || !Number.isInteger(options.ttl)) {
+        throw new Error('TTL must be an integer');
+      }
+      if (options.ttl <= 0) {
+        throw new Error('TTL must be positive');
+      }
+      if (this.maxTtl && options.ttl > this.maxTtl) {
+        throw new Error(`TTL exceeds server maximum of ${this.maxTtl} seconds`);
+      }
+    }
 
     const useEncryption = this.shouldEncrypt(options);
 
@@ -629,11 +645,31 @@ export class VaultSandboxClient {
 
   /**
    * Closes the client, terminates any active connections, and cleans up resources.
+   *
+   * This method performs a graceful shutdown by:
+   * 1. Unsubscribing all inboxes from email notifications
+   * 2. Waiting for pending operations to complete (up to timeout)
+   * 3. Closing the delivery strategy connection
+   * 4. Clearing all tracked inboxes
+   *
+   * @returns A promise that resolves when the client is closed
+   * @example
+   * await client.close();
    */
   async close(): Promise<void> {
+    debug('Closing client');
+
+    // Unsubscribe all inboxes (synchronous)
+    for (const inbox of this.inboxes.values()) {
+      inbox.unsubscribeAll();
+    }
+
+    // Close the delivery strategy
     if (this.strategy) {
       this.strategy.close();
     }
+
     this.inboxes.clear();
+    debug('Client closed successfully');
   }
 }

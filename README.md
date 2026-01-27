@@ -14,36 +14,15 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
 
-**Production-like email testing. Self-hosted & secure.**
+**Production-like email testing. Self-hosted and secure.**
 
-The official Node.js SDK for [VaultSandbox Gateway](https://github.com/vaultsandbox/gateway) — a secure, receive-only SMTP server for QA/testing environments. This SDK abstracts encryption complexity, making email testing workflows transparent and effortless.
+The official Node.js SDK for [VaultSandbox Gateway](https://github.com/vaultsandbox/gateway) — a self-hosted SMTP testing platform that replicates real-world email delivery with TLS, authentication, spam analysis, chaos engineering, and zero-knowledge encryption.
 
-Stop mocking your email stack. If your app sends real emails in production, it must send real emails in testing. VaultSandbox provides isolated inboxes that behave exactly like production without exposing a single byte of customer data.
+Stop mocking. Test email like production.
+
+**[See full feature list →](https://github.com/vaultsandbox/gateway)**
 
 > **Node.js 20+** required. Not intended for browsers or edge runtimes.
-
-## Why VaultSandbox?
-
-| Feature             | Simple Mocks     | Public SaaS  | **VaultSandbox**    |
-| :------------------ | :--------------- | :----------- | :------------------ |
-| **TLS/SSL**         | Ignored/Disabled | Partial      | **Real ACME certs** |
-| **Data Privacy**    | Local only       | Shared cloud | **Private VPC**     |
-| **Inbound Mail**    | Outbound only    | Yes          | **Real MX**         |
-| **Auth (SPF/DKIM)** | None             | Limited      | **Full Validation** |
-| **Crypto**          | Plaintext        | Varies       | **Zero-Knowledge**  |
-
-## Features
-
-- **Quantum-Safe Encryption** — Automatic ML-KEM-768 (Kyber768) key encapsulation + AES-256-GCM encryption
-- **Zero Crypto Knowledge Required** — All cryptographic operations are invisible to the user
-- **Real-Time Email Delivery** — SSE-based delivery with smart polling fallback
-- **Built for CI/CD** — Deterministic tests without sleeps, polling, or flakiness
-- **Full Email Access** — Decrypt and access email content, headers, links, and attachments
-- **Email Authentication** — Built-in SPF/DKIM/DMARC validation helpers
-- **[Spam Analysis](https://vaultsandbox.dev/client-node/concepts/spam-analysis/)** — Rspamd integration for spam scores, classifications, and rule analysis
-- **[Webhooks](https://vaultsandbox.dev/client-node/guides/webhooks/)** — Global and per-inbox HTTP callbacks for email events with filtering and templates
-- **[Chaos Engineering](https://vaultsandbox.dev/client-node/guides/chaos/)** — Per-inbox SMTP failure simulation (latency, drops, errors, greylisting, blackhole)
-- **Type-Safe** — Full TypeScript support with comprehensive type definitions
 
 ## Installation
 
@@ -275,6 +254,45 @@ const subscription = inbox.onNewEmail((email) => {
 
 // To stop listening for emails later:
 // subscription.unsubscribe();
+```
+
+### Webhooks
+
+Get notified when emails arrive via HTTP webhooks.
+
+```javascript
+const inbox = await client.createInbox();
+
+// Create a webhook
+const webhook = await inbox.createWebhook({
+  url: 'https://your-server.com/webhook',
+  events: ['email.received'],
+  template: 'slack', // Or 'discord', 'teams', 'default'
+});
+
+console.log('Webhook secret:', webhook.secret); // Use for signature verification
+```
+
+### Chaos Engineering
+
+Test your application's resilience by simulating email delivery issues.
+
+```javascript
+const inbox = await client.createInbox();
+
+// Enable latency injection
+await inbox.setChaosConfig({
+  enabled: true,
+  latency: {
+    enabled: true,
+    minDelayMs: 1000,
+    maxDelayMs: 5000,
+    probability: 0.5, // 50% of emails affected
+  },
+});
+
+// Disable when done
+await inbox.disableChaos();
 ```
 
 ## API Reference

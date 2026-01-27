@@ -209,6 +209,25 @@ describe('Inbox', () => {
 
       expect(result).toHaveLength(0);
     });
+
+    it('should throw DecryptionError when keypair is null for encrypted inbox', async () => {
+      // Create an inbox with encrypted=true but no keypair
+      const encryptedInboxData: InboxData = {
+        emailAddress: 'encrypted-no-key@example.vaultsandbox.io',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        inboxHash: 'mock-inbox-hash',
+        encrypted: true,
+        serverSigPk: 'mock-server-sig-pk',
+      };
+      const inboxWithoutKeypair = new Inbox(encryptedInboxData, null, mockApiClient, 'mock-server-pk');
+
+      const mockEmailsData = [createMockEmailData('email-1', '2024-01-01T10:00:00Z')];
+      (mockApiClient.listEmails as jest.Mock).mockResolvedValue(mockEmailsData);
+
+      await expect(inboxWithoutKeypair.listEmailsMetadataOnly()).rejects.toThrow(
+        'Encrypted operation requires keypair but inbox encrypted-no-key@example.vaultsandbox.io has none',
+      );
+    });
   });
 
   describe('waitForEmail', () => {
@@ -322,6 +341,98 @@ describe('Inbox', () => {
 
       await expect(waitPromise).rejects.toThrow('API Error');
     });
+
+    it('should ignore timeout callback after already resolved (race condition guard)', async () => {
+      jest.useFakeTimers();
+
+      const mockStrategy = createMockStrategy();
+      let subscribeCallback: ((email: IEmail) => void | Promise<void>) | undefined;
+
+      (mockStrategy.subscribe as jest.Mock).mockImplementation((_emailAddress, _inboxHash, _keypair, callback) => {
+        subscribeCallback = callback;
+        return { unsubscribe: jest.fn() };
+      });
+
+      inbox.setStrategy(mockStrategy);
+
+      // First check returns low count, second returns target count
+      (mockApiClient.getSyncStatus as jest.Mock)
+        .mockResolvedValueOnce({ emailCount: 1, emailsHash: 'hash1' })
+        .mockResolvedValueOnce({ emailCount: 3, emailsHash: 'hash2' });
+
+      const waitPromise = inbox.waitForEmailCount(3, { timeout: 1000 });
+
+      // Trigger callback that will resolve the promise
+      await jest.advanceTimersByTimeAsync(10);
+      if (subscribeCallback) {
+        await subscribeCallback({ id: 'email-1' } as IEmail);
+      }
+
+      // Advance past timeout - timeout callback should be guarded
+      await jest.advanceTimersByTimeAsync(2000);
+
+      // Promise should have resolved successfully, not rejected with timeout
+      await expect(waitPromise).resolves.toBeUndefined();
+
+      jest.useRealTimers();
+    });
+
+    it('should ignore subscription callback after already resolved (race condition guard)', async () => {
+      const mockStrategy = createMockStrategy();
+      let subscribeCallback: ((email: IEmail) => void | Promise<void>) | undefined;
+
+      (mockStrategy.subscribe as jest.Mock).mockImplementation((_emailAddress, _inboxHash, _keypair, callback) => {
+        subscribeCallback = callback;
+        return { unsubscribe: jest.fn() };
+      });
+
+      inbox.setStrategy(mockStrategy);
+
+      // Returns target count on first callback check
+      (mockApiClient.getSyncStatus as jest.Mock).mockResolvedValue({ emailCount: 3, emailsHash: 'hash' });
+
+      const waitPromise = inbox.waitForEmailCount(3, { timeout: 10000 });
+
+      // Trigger first callback which resolves
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (subscribeCallback) {
+        await subscribeCallback({ id: 'email-1' } as IEmail);
+        // Trigger second callback after already resolved - should be guarded
+        await subscribeCallback({ id: 'email-2' } as IEmail);
+      }
+
+      await expect(waitPromise).resolves.toBeUndefined();
+    });
+
+    it('should ignore error after already resolved (race condition guard)', async () => {
+      const mockStrategy = createMockStrategy();
+      let subscribeCallback: ((email: IEmail) => void | Promise<void>) | undefined;
+
+      (mockStrategy.subscribe as jest.Mock).mockImplementation((_emailAddress, _inboxHash, _keypair, callback) => {
+        subscribeCallback = callback;
+        return { unsubscribe: jest.fn() };
+      });
+
+      inbox.setStrategy(mockStrategy);
+
+      // First call returns target count (resolves), second call would throw
+      (mockApiClient.getSyncStatus as jest.Mock)
+        .mockResolvedValueOnce({ emailCount: 3, emailsHash: 'hash1' })
+        .mockRejectedValueOnce(new Error('API Error'));
+
+      const waitPromise = inbox.waitForEmailCount(3, { timeout: 10000 });
+
+      // First callback resolves the promise
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (subscribeCallback) {
+        await subscribeCallback({ id: 'email-1' } as IEmail);
+        // Second callback would throw but should be guarded
+        await subscribeCallback({ id: 'email-2' } as IEmail);
+      }
+
+      // Should resolve, not reject with API error
+      await expect(waitPromise).resolves.toBeUndefined();
+    });
   });
 
   describe('onNewEmail', () => {
@@ -340,8 +451,70 @@ describe('Inbox', () => {
 
       const result = inbox.onNewEmail(callback);
 
-      expect(result).toBe(mockSubscription);
+      // Result is a wrapped subscription that tracks active subscriptions
+      expect(result).toHaveProperty('unsubscribe');
+      expect(typeof result.unsubscribe).toBe('function');
       expect(mockStrategy.subscribe).toHaveBeenCalledWith(inbox.emailAddress, inbox.inboxHash, mockKeypair, callback);
+
+      // When we unsubscribe, it should call the underlying subscription's unsubscribe
+      result.unsubscribe();
+      expect(mockSubscription.unsubscribe).toHaveBeenCalled();
+    });
+  });
+
+  describe('unsubscribeAll', () => {
+    it('should unsubscribe all active subscriptions', () => {
+      const mockStrategy = createMockStrategy();
+      const mockSubscription1: Subscription = { unsubscribe: jest.fn() };
+      const mockSubscription2: Subscription = { unsubscribe: jest.fn() };
+      (mockStrategy.subscribe as jest.Mock)
+        .mockReturnValueOnce(mockSubscription1)
+        .mockReturnValueOnce(mockSubscription2);
+
+      inbox.setStrategy(mockStrategy);
+
+      // Create two subscriptions
+      inbox.onNewEmail(jest.fn());
+      inbox.onNewEmail(jest.fn());
+
+      // Unsubscribe all
+      inbox.unsubscribeAll();
+
+      // Both underlying subscriptions should have been unsubscribed
+      expect(mockSubscription1.unsubscribe).toHaveBeenCalled();
+      expect(mockSubscription2.unsubscribe).toHaveBeenCalled();
+    });
+
+    it('should be safe to call multiple times', () => {
+      const mockStrategy = createMockStrategy();
+      const mockSubscription: Subscription = { unsubscribe: jest.fn() };
+      (mockStrategy.subscribe as jest.Mock).mockReturnValue(mockSubscription);
+
+      inbox.setStrategy(mockStrategy);
+      inbox.onNewEmail(jest.fn());
+
+      // Call unsubscribeAll multiple times
+      inbox.unsubscribeAll();
+      inbox.unsubscribeAll();
+
+      // Should only unsubscribe once
+      expect(mockSubscription.unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle errors in unsubscribe gracefully', () => {
+      const mockStrategy = createMockStrategy();
+      const mockSubscription: Subscription = {
+        unsubscribe: jest.fn().mockImplementation(() => {
+          throw new Error('Unsubscribe failed');
+        }),
+      };
+      (mockStrategy.subscribe as jest.Mock).mockReturnValue(mockSubscription);
+
+      inbox.setStrategy(mockStrategy);
+      inbox.onNewEmail(jest.fn());
+
+      // Should not throw even if unsubscribe throws
+      expect(() => inbox.unsubscribeAll()).not.toThrow();
     });
   });
 

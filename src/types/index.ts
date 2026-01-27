@@ -5,6 +5,14 @@
 // ===== Client Configuration =====
 
 /**
+ * Options for graceful shutdown.
+ */
+export interface CloseOptions {
+  /** Maximum time in milliseconds to wait for pending operations (default: 5000). */
+  timeout?: number;
+}
+
+/**
  * Configuration for the VaultSandboxClient.
  */
 export interface ClientConfig {
@@ -30,6 +38,8 @@ export interface ClientConfig {
   sseReconnectInterval?: number;
   /** The maximum number of SSE reconnection attempts (default: 10). */
   sseMaxReconnectAttempts?: number;
+  /** Maximum number of emails to cache per inbox in SSE strategy (default: 1000). Set to 0 for unlimited. */
+  sseMaxCacheSize?: number;
 }
 
 // ===== Inbox =====
@@ -251,6 +261,8 @@ export interface AttachmentData {
   checksum?: string;
   /** The content of the attachment as a byte array. */
   content?: Uint8Array;
+  /** Indicates that the attachment content failed to decode from base64. */
+  decodeError?: boolean;
 }
 
 /**
@@ -558,6 +570,8 @@ export interface SSEConfig {
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
   backoffMultiplier?: number;
+  /** Maximum number of emails to cache per inbox (default: 1000). Set to 0 for unlimited. */
+  maxCacheSize?: number;
 }
 
 /**

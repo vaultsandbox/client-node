@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.1] - 2026-01-27
+
+### Added
+
+- Chaos and webhook examples
+- Reliability enhancements
+
+### Fixed
+
+- Race condition in SSE message processing (now sequential via queue)
+- Silent error swallowing in SSE and polling strategies (errors now propagate to callbacks)
+- Unsafe keypair assertions that could crash on malformed server responses
+- Missing validation for SSE message payloads
+- Unhandled exceptions in user-provided predicate functions
+
 ## [0.9.0] - 2026-01-22
 
 ### Added

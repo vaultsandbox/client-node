@@ -23,6 +23,7 @@ export interface DeliveryStrategy {
    * @param callback - Function to call when new email arrives
    * @param emailCache - Optional local email cache for sync operations
    * @param onEmailDeleted - Optional callback when email is deleted from server
+   * @param onError - Optional callback when an error occurs during processing
    * @returns Subscription object with unsubscribe method
    */
   subscribe(
@@ -32,6 +33,7 @@ export interface DeliveryStrategy {
     callback: (email: IEmail) => void | Promise<void>,
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
+    onError?: (error: Error) => void,
   ): Subscription;
 
   /**

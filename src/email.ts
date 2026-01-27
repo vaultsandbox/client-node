@@ -26,6 +26,7 @@ import type {
 } from './types/index.js';
 import type { ApiClient } from './http/api-client.js';
 import { decryptRaw } from './crypto/decrypt.js';
+import { DecryptionError } from './types/index.js';
 
 const debug = createDebug('vaultsandbox:email');
 
@@ -272,7 +273,10 @@ export class Email implements IEmail {
     /* istanbul ignore else - defensive for invalid raw email response */
     if (rawEmailData.encryptedRaw) {
       // Encrypted inbox - decrypt the raw content
-      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair!);
+      if (!this.keypair) {
+        throw new DecryptionError(`Cannot decrypt raw email: no keypair available for ${this.emailAddress}`);
+      }
+      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair);
     } else if (rawEmailData.raw) {
       // Plain inbox - decode base64
       raw = Buffer.from(rawEmailData.raw, 'base64').toString('utf-8');

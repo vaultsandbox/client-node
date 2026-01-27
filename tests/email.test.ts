@@ -255,6 +255,16 @@ describe('Email', () => {
       expect(rawEmail.id).toBe('email-123');
       expect(rawEmail.raw).toBe('raw email content');
     });
+
+    it('should throw DecryptionError when keypair is null for encrypted raw email', async () => {
+      // Create email without keypair (null)
+      const email = new Email(mockEmailData, mockMetadata, mockParsed, 'test@example.com', mockApiClient, null);
+
+      // mockApiClient.getRawEmail returns encryptedRaw by default (set up in the mock)
+      await expect(email.getRaw()).rejects.toThrow(
+        'Cannot decrypt raw email: no keypair available for test@example.com',
+      );
+    });
   });
 });
 

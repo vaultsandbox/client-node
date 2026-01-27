@@ -381,6 +381,84 @@ describe('SSE Strategy Unit Tests', () => {
       strategy.close();
     });
 
+    it('should throw SSEError for non-object message data', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+
+      // @ts-expect-error - accessing private method for testing
+      await expect(strategy.handleMessage('"string value"')).rejects.toThrow('Invalid SSE message: not an object');
+
+      strategy.close();
+    });
+
+    it('should throw SSEError for missing inboxId', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+
+      // @ts-expect-error - accessing private method for testing
+      await expect(strategy.handleMessage('{"emailId": "test-id"}')).rejects.toThrow(
+        'Invalid SSE message: missing or invalid inboxId',
+      );
+
+      strategy.close();
+    });
+
+    it('should throw SSEError for missing emailId', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+
+      // @ts-expect-error - accessing private method for testing
+      await expect(strategy.handleMessage('{"inboxId": "test-hash"}')).rejects.toThrow(
+        'Invalid SSE message: missing or invalid emailId',
+      );
+
+      strategy.close();
+    });
+
+    it('should throw SSEError for empty inboxId', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+
+      // @ts-expect-error - accessing private method for testing
+      await expect(strategy.handleMessage('{"inboxId": "", "emailId": "test-id"}')).rejects.toThrow(
+        'Invalid SSE message: missing or invalid inboxId',
+      );
+
+      strategy.close();
+    });
+
+    it('should throw SSEError for empty emailId', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+
+      // @ts-expect-error - accessing private method for testing
+      await expect(strategy.handleMessage('{"inboxId": "test-hash", "emailId": ""}')).rejects.toThrow(
+        'Invalid SSE message: missing or invalid emailId',
+      );
+
+      strategy.close();
+    });
+
     it('should handle missing subscription for incoming email', async () => {
       const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
         url: 'http://localhost:3000',
@@ -625,6 +703,41 @@ describe('SSE Strategy Unit Tests', () => {
       expect(true).toBe(true);
     });
 
+    it('should remove error callback when unsubscribing with onError', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      const onError = jest.fn();
+      const sub = strategy.subscribe(
+        'test@example.com',
+        'test-hash',
+        mockKeypair,
+        () => {},
+        undefined,
+        undefined,
+        onError,
+      );
+
+      // @ts-expect-error - accessing private property for testing
+      const subscription = strategy.subscriptions.get('test@example.com');
+      expect(subscription?.errorCallbacks.has(onError)).toBe(true);
+
+      // Unsubscribe should remove error callback
+      sub.unsubscribe();
+
+      // Error callback should be removed
+      // Note: subscription may be deleted if it was the last callback
+      // @ts-expect-error - accessing private property for testing
+      const subAfter = strategy.subscriptions.get('test@example.com');
+      if (subAfter) {
+        expect(subAfter.errorCallbacks.has(onError)).toBe(false);
+      }
+
+      strategy.close();
+    });
+
     it('should disconnect when all subscriptions are removed', () => {
       const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
         url: 'http://localhost:3000',
@@ -684,6 +797,74 @@ describe('SSE Strategy Unit Tests', () => {
 
       strategy.close();
       expect(true).toBe(true);
+    });
+
+    it('should handle error in onmessage through message queue catch block', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      const errorCallback = jest.fn();
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback);
+
+      // Get the EventSource instance
+      // @ts-expect-error - accessing private property for testing
+      const eventSource = strategy.eventSource;
+
+      if (eventSource && eventSource.onmessage) {
+        // Trigger onmessage with invalid JSON to cause handleMessage to throw
+        eventSource.onmessage({ data: 'invalid json' } as MessageEvent);
+
+        // Wait for the message queue to process
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Error callback should have been called via notifyErrorCallbacks
+        expect(errorCallback).toHaveBeenCalled();
+      }
+
+      strategy.close();
+    });
+
+    it('should wrap non-Error objects in SSEError in message queue catch', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      const errorCallback = jest.fn();
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback);
+
+      // Get the EventSource instance
+      // @ts-expect-error - accessing private property for testing
+      const eventSource = strategy.eventSource;
+
+      // Mock handleMessage to reject with a non-Error
+      // @ts-expect-error - accessing private method for testing
+      const originalHandleMessage = strategy.handleMessage.bind(strategy);
+      // @ts-expect-error - replacing private method for testing
+      strategy.handleMessage = jest.fn().mockRejectedValue('string error');
+
+      if (eventSource && eventSource.onmessage) {
+        // Trigger onmessage
+        eventSource.onmessage({ data: '{"inboxId": "test", "emailId": "test"}' } as MessageEvent);
+
+        // Wait for the message queue to process
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Error callback should have been called with SSEError wrapping the string
+        expect(errorCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: 'string error',
+          }),
+        );
+      }
+
+      // Restore original handleMessage
+      // @ts-expect-error - accessing private method for testing
+      strategy.handleMessage = originalHandleMessage;
+
+      strategy.close();
     });
 
     it('should handle errors in onmessage handler', async () => {
@@ -1407,17 +1588,141 @@ describe('SSE Strategy Unit Tests', () => {
         maxReconnectAttempts: 3,
       });
 
-      // Subscribe to create a subscription
-      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+      const errorCallback = jest.fn();
+
+      // Subscribe with an error callback
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback);
 
       // Set reconnect attempts to max
       // @ts-expect-error - accessing private property for testing
       strategy.reconnectAttempts = 3;
 
-      // Trigger handleConnectionError - should throw since we're at max attempts
+      // Trigger handleConnectionError - should notify error callbacks and cleanup
       // @ts-expect-error - accessing private method for testing
-      expect(() => strategy.handleConnectionError()).toThrow(
-        'Failed to establish SSE connection after maximum retry attempts',
+      strategy.handleConnectionError();
+
+      // Verify error callback was called with SSEError
+      expect(errorCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Failed to establish SSE connection after maximum retry attempts',
+        }),
+      );
+
+      // Verify strategy was cleaned up (close() was called internally)
+      // @ts-expect-error - accessing private property for testing
+      expect(strategy.isClosing).toBe(true);
+    });
+  });
+
+  describe('NotifyErrorCallbacks', () => {
+    it('should handle error callback that throws', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+        maxReconnectAttempts: 3,
+      });
+
+      const throwingErrorCallback = jest.fn().mockImplementation(() => {
+        throw new Error('Error callback threw');
+      });
+      const normalErrorCallback = jest.fn();
+
+      // Subscribe with both callbacks
+      strategy.subscribe(
+        'test@example.com',
+        'test-hash',
+        mockKeypair,
+        () => {},
+        undefined,
+        undefined,
+        throwingErrorCallback,
+      );
+      strategy.subscribe(
+        'test2@example.com',
+        'test-hash-2',
+        mockKeypair,
+        () => {},
+        undefined,
+        undefined,
+        normalErrorCallback,
+      );
+
+      // Set reconnect attempts to max to trigger error notification
+      // @ts-expect-error - accessing private property for testing
+      strategy.reconnectAttempts = 3;
+
+      // Should not throw even though one callback throws
+      // @ts-expect-error - accessing private method for testing
+      expect(() => strategy.handleConnectionError()).not.toThrow();
+
+      // Both callbacks should have been called
+      expect(throwingErrorCallback).toHaveBeenCalled();
+      expect(normalErrorCallback).toHaveBeenCalled();
+
+      strategy.close();
+    });
+
+    it('should call notifyErrorCallbacks directly', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      const errorCallback1 = jest.fn();
+      const throwingCallback = jest.fn().mockImplementation(() => {
+        throw new Error('Callback threw');
+      });
+      const errorCallback2 = jest.fn();
+
+      // Subscribe multiple times with different error callbacks
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback1);
+      strategy.subscribe(
+        'test@example.com',
+        'test-hash',
+        mockKeypair,
+        () => {},
+        undefined,
+        undefined,
+        throwingCallback,
+      );
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback2);
+
+      // Call notifyErrorCallbacks directly
+      const testError = new Error('Test error');
+      // @ts-expect-error - accessing private method for testing
+      strategy.notifyErrorCallbacks(testError);
+
+      // All callbacks should have been called
+      expect(errorCallback1).toHaveBeenCalledWith(testError);
+      expect(throwingCallback).toHaveBeenCalledWith(testError);
+      expect(errorCallback2).toHaveBeenCalledWith(testError);
+
+      strategy.close();
+    });
+  });
+
+  describe('ValidateKeypair', () => {
+    it('should throw DecryptionError when keypair is null for encrypted email', async () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      // Subscribe with null keypair
+      strategy.subscribe('test@example.com', 'test-hash', null, () => {});
+
+      // Mock getEmail to return encrypted email data
+      mockApiClient.getEmail = jest.fn().mockResolvedValue(createMockEmailData('test-email-id'));
+
+      const messageData = JSON.stringify({
+        inboxId: 'test-hash',
+        emailId: 'test-email-id',
+      });
+
+      // Should throw DecryptionError because keypair is null
+      // @ts-expect-error - accessing private method for testing
+      await expect(strategy.handleMessage(messageData)).rejects.toThrow(
+        'Received encrypted email for inbox test@example.com but no keypair available',
       );
 
       strategy.close();
@@ -1479,6 +1784,99 @@ describe('SSE Strategy Unit Tests', () => {
 
       // @ts-expect-error - accessing private method for testing
       await strategy.syncAllInboxes();
+
+      strategy.close();
+    });
+  });
+
+  describe('Cache Eviction', () => {
+    it('should trim cache when it exceeds maxCacheSize', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+        maxCacheSize: 3,
+      });
+
+      const emailCache = new Map<string, EmailData>();
+
+      // Add 5 emails to cache
+      emailCache.set('email-1', createMockEmailData('email-1'));
+      emailCache.set('email-2', createMockEmailData('email-2'));
+      emailCache.set('email-3', createMockEmailData('email-3'));
+      emailCache.set('email-4', createMockEmailData('email-4'));
+      emailCache.set('email-5', createMockEmailData('email-5'));
+
+      // Trim the cache
+      // @ts-expect-error - accessing private method for testing
+      strategy.trimCache(emailCache);
+
+      // Should have only 3 emails (oldest evicted first)
+      expect(emailCache.size).toBe(3);
+      expect(emailCache.has('email-1')).toBe(false);
+      expect(emailCache.has('email-2')).toBe(false);
+      expect(emailCache.has('email-3')).toBe(true);
+      expect(emailCache.has('email-4')).toBe(true);
+      expect(emailCache.has('email-5')).toBe(true);
+
+      strategy.close();
+    });
+
+    it('should not trim cache when maxCacheSize is 0 (unlimited)', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+        maxCacheSize: 0,
+      });
+
+      const emailCache = new Map<string, EmailData>();
+
+      // Add many emails
+      for (let i = 0; i < 100; i++) {
+        emailCache.set(`email-${i}`, createMockEmailData(`email-${i}`));
+      }
+
+      // Trim the cache
+      // @ts-expect-error - accessing private method for testing
+      strategy.trimCache(emailCache);
+
+      // Should still have all emails
+      expect(emailCache.size).toBe(100);
+
+      strategy.close();
+    });
+
+    it('should use default maxCacheSize of 1000', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+      });
+
+      // @ts-expect-error - accessing private property for testing
+      expect(strategy.maxCacheSize).toBe(1000);
+
+      strategy.close();
+    });
+
+    it('should not trim cache when size is under limit', () => {
+      const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
+        url: 'http://localhost:3000',
+        apiKey: 'test-key',
+        maxCacheSize: 10,
+      });
+
+      const emailCache = new Map<string, EmailData>();
+
+      // Add 5 emails
+      for (let i = 0; i < 5; i++) {
+        emailCache.set(`email-${i}`, createMockEmailData(`email-${i}`));
+      }
+
+      // Trim the cache
+      // @ts-expect-error - accessing private method for testing
+      strategy.trimCache(emailCache);
+
+      // Should still have all 5 emails
+      expect(emailCache.size).toBe(5);
 
       strategy.close();
     });

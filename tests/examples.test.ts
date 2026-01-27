@@ -386,4 +386,45 @@ describeExamples('README Examples', () => {
       expect(caughtError).toBeInstanceOf(TimeoutError);
     }, 30000);
   });
+
+  it('Webhook example', async () => {
+    const inbox = await createInbox();
+
+    // Create a webhook
+    const webhook = await inbox.createWebhook({
+      url: 'https://hooks.example.com/webhook',
+      events: ['email.received'],
+      template: 'slack',
+    });
+
+    expect(webhook.id).toBeDefined();
+    expect(webhook.url).toBe('https://hooks.example.com/webhook');
+    expect(webhook.events).toContain('email.received');
+    expect(webhook.secret).toBeDefined();
+
+    await inbox.deleteWebhook(webhook.id);
+  }, 30000);
+
+  it('Chaos Engineering example', async () => {
+    const inbox = await createInbox();
+
+    // Enable latency injection
+    const config = await inbox.setChaosConfig({
+      enabled: true,
+      latency: {
+        enabled: true,
+        minDelayMs: 1000,
+        maxDelayMs: 5000,
+        probability: 0.5,
+      },
+    });
+
+    expect(config.enabled).toBe(true);
+    expect(config.latency?.enabled).toBe(true);
+
+    // Disable when done
+    await inbox.disableChaos();
+    const disabled = await inbox.getChaosConfig();
+    expect(disabled.enabled).toBe(false);
+  }, 30000);
 });

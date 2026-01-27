@@ -2,10 +2,13 @@
  * Shared email utilities for decryption and filtering
  */
 
+import createDebug from 'debug';
 import { Email } from '../email.js';
 import { decryptMetadata, decryptParsed } from '../crypto/decrypt.js';
 import { verifySignature } from '../crypto/signature.js';
 import { fromBase64 } from '../crypto/utils.js';
+
+const debug = createDebug('vaultsandbox:email-utils');
 import type {
   Keypair,
   EmailData,
@@ -26,6 +29,27 @@ import type { ApiClient } from '../http/api-client.js';
  */
 export function isEncryptedEmailData(email: EmailData): email is EncryptedEmailData {
   return 'encryptedMetadata' in email;
+}
+
+/**
+ * Transforms attachment content from base64 strings to Uint8Array.
+ * The server returns attachment content as base64-encoded strings, but our type expects Uint8Array.
+ * @param attachments - Array of attachment data to transform
+ * @returns Transformed attachments with content as Uint8Array (or undefined with decodeError flag if decode fails)
+ */
+function transformAttachmentContent(attachments: AttachmentData[]): AttachmentData[] {
+  return attachments.map((att) => {
+    if (att.content && typeof att.content === 'string') {
+      try {
+        return { ...att, content: fromBase64(att.content) };
+      } catch (error) {
+        debug('Failed to decode attachment %s: %O', att.filename, error);
+        // Return attachment with undefined content to indicate decode failure
+        return { ...att, content: undefined, decodeError: true };
+      }
+    }
+    return att;
+  });
 }
 
 /**
@@ -53,19 +77,8 @@ export async function decryptEmailData(
     parsed = await decryptParsed<DecryptedParsed>(emailData.encryptedParsed, keypair);
 
     // Transform attachment content from base64 strings to Uint8Array
-    // The server returns attachment content as base64-encoded strings, but our type expects Uint8Array
     if (parsed?.attachments) {
-      parsed.attachments = parsed.attachments.map((att) => {
-        // Check if content exists and is a string (base64 encoded)
-        if (att.content && typeof att.content === 'string') {
-          return {
-            ...att,
-            content: fromBase64(att.content),
-          };
-        }
-        // Content is already Uint8Array or undefined
-        return att;
-      });
+      parsed.attachments = transformAttachmentContent(parsed.attachments);
     }
   }
 
@@ -88,17 +101,8 @@ export function decodeBase64EmailData(emailData: PlainEmailData, emailAddress: s
     parsed = JSON.parse(parsedJson);
 
     // Transform attachment content from base64 strings to Uint8Array
-    // Same as encrypted path - server sends attachment content as base64
     if (parsed?.attachments) {
-      parsed.attachments = parsed.attachments.map((att: AttachmentData & { content?: string | Uint8Array }) => {
-        if (att.content && typeof att.content === 'string') {
-          return {
-            ...att,
-            content: fromBase64(att.content),
-          };
-        }
-        return att;
-      });
+      parsed.attachments = transformAttachmentContent(parsed.attachments);
     }
   }
 
@@ -152,8 +156,13 @@ export function matchesFilters(email: IEmail, options: WaitOptions): boolean {
 
   // Check custom predicate
   if (options.predicate) {
-    if (!options.predicate(email)) {
-      return false;
+    try {
+      if (!options.predicate(email)) {
+        return false;
+      }
+    } catch (error) {
+      debug('Error in user predicate function: %O', error);
+      return false; // Treat throwing predicate as non-match
     }
   }
 

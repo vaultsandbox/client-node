@@ -169,6 +169,68 @@ describeIntegration('VaultSandbox Client Tests', () => {
 
 // Unit tests that don't require a server
 describe('VaultSandbox Client Unit Tests', () => {
+  describe('TTL Validation', () => {
+    it('should throw error when TTL is not an integer', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: unknown;
+      };
+
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: jest.fn() };
+
+      await expect(client.createInbox({ ttl: 3.5 })).rejects.toThrow('TTL must be an integer');
+    });
+
+    it('should throw error when TTL is not positive', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: unknown;
+      };
+
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: jest.fn() };
+
+      await expect(client.createInbox({ ttl: 0 })).rejects.toThrow('TTL must be positive');
+      await expect(client.createInbox({ ttl: -1 })).rejects.toThrow('TTL must be positive');
+    });
+
+    it('should throw error when TTL exceeds server maximum', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: unknown;
+        maxTtl: number;
+      };
+
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: jest.fn() };
+      clientWithPrivates.maxTtl = 3600;
+
+      await expect(client.createInbox({ ttl: 7200 })).rejects.toThrow('TTL exceeds server maximum of 3600 seconds');
+    });
+  });
+
   it('should throw StrategyError when calling monitorInboxes before initialization', () => {
     const uninitializedClient = new VaultSandboxClient({
       url: 'http://localhost:3000',
@@ -230,6 +292,118 @@ describe('VaultSandbox Client Unit Tests', () => {
 
     await expect(client.createInbox()).rejects.toThrow(ApiError);
     await expect(client.createInbox()).rejects.toThrow('Internal server error');
+  });
+
+  describe('graceful shutdown', () => {
+    it('should close with default timeout', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      // Mock ensureInitialized by setting private properties
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: { close: () => void };
+        inboxes: Map<string, unknown>;
+      };
+
+      const mockClose = jest.fn();
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: mockClose };
+
+      await client.close();
+
+      expect(mockClose).toHaveBeenCalled();
+    });
+
+    it('should close strategy when closing client', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      // Mock ensureInitialized by setting private properties
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: { close: () => void };
+        inboxes: Map<string, unknown>;
+      };
+
+      const mockClose = jest.fn();
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: mockClose };
+
+      await client.close();
+
+      expect(mockClose).toHaveBeenCalled();
+    });
+
+    it('should unsubscribe all inboxes during close', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      const mockUnsubscribeAll = jest.fn();
+      const mockInbox = { unsubscribeAll: mockUnsubscribeAll };
+
+      // Mock ensureInitialized by setting private properties
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: { close: () => void };
+        inboxes: Map<string, unknown>;
+      };
+
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: jest.fn() };
+      clientWithPrivates.inboxes = new Map([['test@example.com', mockInbox]]);
+
+      await client.close();
+
+      expect(mockUnsubscribeAll).toHaveBeenCalled();
+    });
+
+    it('should not wait forever if unsubscribe hangs', async () => {
+      const client = new VaultSandboxClient({
+        url: 'http://localhost:3000',
+        apiKey: 'test-api-key',
+      });
+
+      // Create an inbox that hangs on unsubscribeAll
+      const mockUnsubscribeAll = jest.fn().mockImplementation(() => {
+        return new Promise(() => {
+          // Never resolves
+        });
+      });
+      const mockInbox = { unsubscribeAll: mockUnsubscribeAll };
+
+      // Mock ensureInitialized by setting private properties
+      const clientWithPrivates = client as unknown as {
+        serverPublicKey: string;
+        encryptionPolicy: string;
+        strategy: { close: () => void };
+        inboxes: Map<string, unknown>;
+      };
+
+      clientWithPrivates.serverPublicKey = 'mock-server-public-key';
+      clientWithPrivates.encryptionPolicy = 'enabled';
+      clientWithPrivates.strategy = { close: jest.fn() };
+      clientWithPrivates.inboxes = new Map([['test@example.com', mockInbox]]);
+
+      const startTime = Date.now();
+      await client.close();
+      const elapsed = Date.now() - startTime;
+
+      // Should complete quickly since unsubscribeAll is synchronous
+      expect(elapsed).toBeLessThan(100);
+    });
   });
 });
 

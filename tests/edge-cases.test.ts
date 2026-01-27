@@ -9,7 +9,14 @@
 import axios, { AxiosError, AxiosHeaders } from 'axios';
 import { ApiClient } from '../src/http/api-client';
 import { SSEStrategy } from '../src/strategies/sse-strategy';
-import { ApiError, NetworkError, InboxNotFoundError, EmailNotFoundError, SSEError } from '../src/types/index';
+import {
+  ApiError,
+  NetworkError,
+  InboxNotFoundError,
+  EmailNotFoundError,
+  WebhookNotFoundError,
+  SSEError,
+} from '../src/types/index';
 import type { Keypair } from '../src/types/index';
 
 // Mock axios
@@ -234,6 +241,62 @@ describe('ApiClient Edge Cases', () => {
 
       expect(responseInterceptorError).not.toBeNull();
       await expect(responseInterceptorError!(error)).rejects.toBeInstanceOf(ApiError);
+    });
+  });
+
+  describe('Error Handling - Structured errorType', () => {
+    it('should return InboxNotFoundError for errorType inbox_not_found', async () => {
+      const error = new AxiosError('Request failed');
+      const config: import('axios').InternalAxiosRequestConfig = {
+        headers: new AxiosHeaders(),
+      };
+      error.config = config;
+      error.response = {
+        status: 404,
+        statusText: 'Not Found',
+        data: { error: 'Inbox not found', errorType: 'inbox_not_found' },
+        headers: {},
+        config: config,
+      };
+
+      expect(responseInterceptorError).not.toBeNull();
+      await expect(responseInterceptorError!(error)).rejects.toBeInstanceOf(InboxNotFoundError);
+    });
+
+    it('should return EmailNotFoundError for errorType email_not_found', async () => {
+      const error = new AxiosError('Request failed');
+      const config: import('axios').InternalAxiosRequestConfig = {
+        headers: new AxiosHeaders(),
+      };
+      error.config = config;
+      error.response = {
+        status: 404,
+        statusText: 'Not Found',
+        data: { error: 'Email not found', errorType: 'email_not_found' },
+        headers: {},
+        config: config,
+      };
+
+      expect(responseInterceptorError).not.toBeNull();
+      await expect(responseInterceptorError!(error)).rejects.toBeInstanceOf(EmailNotFoundError);
+    });
+
+    it('should return WebhookNotFoundError for errorType webhook_not_found', async () => {
+      const error = new AxiosError('Request failed');
+      const config: import('axios').InternalAxiosRequestConfig = {
+        headers: new AxiosHeaders(),
+      };
+      error.config = config;
+      error.response = {
+        status: 404,
+        statusText: 'Not Found',
+        data: { error: 'Webhook not found', errorType: 'webhook_not_found' },
+        headers: {},
+        config: config,
+      };
+
+      expect(responseInterceptorError).not.toBeNull();
+      await expect(responseInterceptorError!(error)).rejects.toBeInstanceOf(WebhookNotFoundError);
     });
   });
 
@@ -482,8 +545,10 @@ describe('SSEStrategy Edge Cases', () => {
         backoffMultiplier: 1,
       });
 
-      // Subscribe to set up subscriptions
-      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+      const errorCallback = jest.fn();
+
+      // Subscribe with an error callback
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback);
 
       // Manually set reconnectAttempts to exceed max
       // @ts-expect-error - accessing private property for testing
@@ -491,21 +556,24 @@ describe('SSEStrategy Edge Cases', () => {
       // @ts-expect-error - accessing private property for testing
       strategy.maxReconnectAttempts = 0;
 
-      // This should throw SSEError
-      expect(() => {
-        // @ts-expect-error - accessing private method for testing
-        strategy.handleConnectionError();
-      }).toThrow(SSEError);
+      // This should notify error callbacks and cleanup
+      // @ts-expect-error - accessing private method for testing
+      strategy.handleConnectionError();
 
-      expect(() => {
-        // @ts-expect-error - accessing private method for testing
-        strategy.handleConnectionError();
-      }).toThrow('Failed to establish SSE connection after maximum retry attempts');
+      // Verify error callback was called with SSEError
+      expect(errorCallback).toHaveBeenCalledWith(expect.any(SSEError));
+      expect(errorCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Failed to establish SSE connection after maximum retry attempts',
+        }),
+      );
 
-      strategy.close();
+      // Verify strategy was cleaned up
+      // @ts-expect-error - accessing private property for testing
+      expect(strategy.isClosing).toBe(true);
     });
 
-    it('should throw SSEError after exhausting all reconnection attempts', () => {
+    it('should notify error callbacks after exhausting all reconnection attempts', () => {
       const maxAttempts = 2;
       const strategy = new SSEStrategy(mockApiClient as import('../src/http/api-client').ApiClient, {
         url: 'http://localhost:3000',
@@ -515,20 +583,25 @@ describe('SSEStrategy Edge Cases', () => {
         backoffMultiplier: 1,
       });
 
-      // Subscribe to set up subscriptions
-      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {});
+      const errorCallback = jest.fn();
+
+      // Subscribe with an error callback
+      strategy.subscribe('test@example.com', 'test-hash', mockKeypair, () => {}, undefined, undefined, errorCallback);
 
       // Simulate reaching max attempts
       // @ts-expect-error - accessing private property for testing
       strategy.reconnectAttempts = maxAttempts;
 
-      // This should throw SSEError
-      expect(() => {
-        // @ts-expect-error - accessing private method for testing
-        strategy.handleConnectionError();
-      }).toThrow(SSEError);
+      // This should notify error callbacks and cleanup
+      // @ts-expect-error - accessing private method for testing
+      strategy.handleConnectionError();
 
-      strategy.close();
+      // Verify error callback was called with SSEError
+      expect(errorCallback).toHaveBeenCalledWith(expect.any(SSEError));
+
+      // Verify strategy was cleaned up
+      // @ts-expect-error - accessing private property for testing
+      expect(strategy.isClosing).toBe(true);
     });
   });
 

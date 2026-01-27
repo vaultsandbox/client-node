@@ -774,6 +774,135 @@ describe('PollingStrategy', () => {
       subscription.unsubscribe();
     });
 
+    it('should call onError callback when sync fails', async () => {
+      const apiClient = createMockApiClient();
+      const strategy = new PollingStrategy(apiClient, { initialInterval: 50 });
+      const emailAddress = 'test@example.com';
+
+      let pollResolvers: Array<{ resolve: (value: inboxSync.SyncResult) => void; reject: (error: Error) => void }> = [];
+
+      (inboxSync.syncInbox as jest.Mock).mockImplementation(() => {
+        return new Promise<inboxSync.SyncResult>((resolve, reject) => {
+          pollResolvers.push({ resolve, reject });
+        });
+      });
+
+      (sleepModule.sleep as jest.Mock).mockResolvedValue(undefined);
+
+      const callback = jest.fn();
+      const onError = jest.fn();
+      const subscription = strategy.subscribe(
+        emailAddress,
+        'inbox-hash',
+        mockKeypair,
+        callback,
+        undefined,
+        undefined,
+        onError,
+      );
+
+      await Promise.resolve();
+
+      // First poll - error
+      pollResolvers[0].reject(new Error('Sync error'));
+
+      await new Promise((resolve) => setImmediate(resolve));
+      await Promise.resolve();
+
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Sync error' }));
+
+      subscription.unsubscribe();
+    });
+
+    it('should call onError callback with wrapped error for non-Error objects', async () => {
+      const apiClient = createMockApiClient();
+      const strategy = new PollingStrategy(apiClient, { initialInterval: 50 });
+      const emailAddress = 'test@example.com';
+
+      let pollResolvers: Array<{ resolve: (value: inboxSync.SyncResult) => void; reject: (error: unknown) => void }> =
+        [];
+
+      (inboxSync.syncInbox as jest.Mock).mockImplementation(() => {
+        return new Promise<inboxSync.SyncResult>((resolve, reject) => {
+          pollResolvers.push({ resolve, reject });
+        });
+      });
+
+      (sleepModule.sleep as jest.Mock).mockResolvedValue(undefined);
+
+      const callback = jest.fn();
+      const onError = jest.fn();
+      const subscription = strategy.subscribe(
+        emailAddress,
+        'inbox-hash',
+        mockKeypair,
+        callback,
+        undefined,
+        undefined,
+        onError,
+      );
+
+      await Promise.resolve();
+
+      // First poll - reject with non-Error object
+      pollResolvers[0].reject('string error');
+
+      await new Promise((resolve) => setImmediate(resolve));
+      await Promise.resolve();
+
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'string error' }));
+
+      subscription.unsubscribe();
+    });
+
+    it('should handle onError callback that throws', async () => {
+      const apiClient = createMockApiClient();
+      const strategy = new PollingStrategy(apiClient, { initialInterval: 50 });
+      const emailAddress = 'test@example.com';
+
+      let pollCount = 0;
+      let pollResolvers: Array<{ resolve: (value: inboxSync.SyncResult) => void; reject: (error: Error) => void }> = [];
+
+      (inboxSync.syncInbox as jest.Mock).mockImplementation(() => {
+        pollCount++;
+        return new Promise<inboxSync.SyncResult>((resolve, reject) => {
+          pollResolvers.push({ resolve, reject });
+        });
+      });
+
+      (sleepModule.sleep as jest.Mock).mockResolvedValue(undefined);
+
+      const callback = jest.fn();
+      const throwingOnError = jest.fn().mockImplementation(() => {
+        throw new Error('Error callback threw');
+      });
+      const subscription = strategy.subscribe(
+        emailAddress,
+        'inbox-hash',
+        mockKeypair,
+        callback,
+        undefined,
+        undefined,
+        throwingOnError,
+      );
+
+      await Promise.resolve();
+
+      // First poll - error
+      pollResolvers[0].reject(new Error('Sync error'));
+
+      await new Promise((resolve) => setImmediate(resolve));
+      await Promise.resolve();
+
+      // Should continue polling despite error callback throwing
+      expect(pollCount).toBe(2);
+      expect(throwingOnError).toHaveBeenCalled();
+
+      subscription.unsubscribe();
+    });
+
     it('should handle email fetch errors gracefully', async () => {
       const { apiClient, strategy, emailAddress, resolvePoll } = createControlledSubscribeTest();
       const mockEmailData = createMockEmailData('email1');
@@ -927,6 +1056,30 @@ describe('PollingStrategy', () => {
       strategy.close();
       strategy.close();
       strategy.close();
+    });
+  });
+
+  describe('validateKeypair', () => {
+    it('should throw DecryptionError when keypair is null for encrypted email', async () => {
+      const apiClient = createMockApiClient();
+      const strategy = new PollingStrategy(apiClient);
+      const emailAddress = 'test@example.com';
+      const mockEmailData = createMockEmailData('email1');
+
+      apiClient.getSyncStatus.mockResolvedValue({
+        emailCount: 1,
+        emailsHash: 'hash1',
+      });
+
+      apiClient.listEmails.mockResolvedValue([mockEmailData]);
+
+      // isEncryptedEmailData returns true by default in beforeEach
+
+      await expect(
+        strategy.waitForEmail(emailAddress, 'inbox-hash', null, {
+          timeout: 5000,
+        }),
+      ).rejects.toThrow('Received encrypted email for inbox test@example.com but no keypair available');
     });
   });
 });

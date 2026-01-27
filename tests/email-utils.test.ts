@@ -127,6 +127,14 @@ describe('email-utils', () => {
         const email = createMockEmail({ attachments: [] });
         expect(matchesFilters(email, { predicate: (e) => e.attachments.length > 0 })).toBe(false);
       });
+
+      it('should return false when predicate throws an error', () => {
+        const email = createMockEmail();
+        const throwingPredicate = () => {
+          throw new Error('Predicate error');
+        };
+        expect(matchesFilters(email, { predicate: throwingPredicate })).toBe(false);
+      });
     });
 
     describe('combined filters', () => {
@@ -426,6 +434,50 @@ describe('email-utils', () => {
       await expect(
         decryptEmailData(emailDataWithParsed, mockKeypair, 'test@example.com', mockApiClient),
       ).resolves.toBeDefined();
+    });
+
+    it('should handle invalid base64 attachment content gracefully', async () => {
+      const invalidBase64Content = '!!!invalid-base64!!!';
+
+      (decryptModule.decryptParsed as jest.Mock).mockResolvedValue({
+        text: 'body',
+        html: '<p>body</p>',
+        headers: {},
+        attachments: [
+          {
+            filename: 'test.txt',
+            contentType: 'text/plain',
+            size: 11,
+            content: invalidBase64Content,
+          },
+        ],
+      });
+
+      // Mock fromBase64 to throw an error for invalid base64
+      jest.spyOn(utilsModule, 'fromBase64').mockImplementation(() => {
+        throw new Error('Invalid base64');
+      });
+
+      const emailDataWithParsed: EmailData = {
+        ...mockEmailData,
+        encryptedParsed: {
+          v: 1,
+          ct_kem: 'ct2',
+          nonce: 'nonce2',
+          aad: 'aad2',
+          ciphertext: 'cipher2',
+          sig: 'sig2',
+          server_sig_pk: 'pk2',
+          algs: { kem: 'ML-KEM-768', sig: 'ML-DSA-65', aead: 'AES-256-GCM', kdf: 'HKDF-SHA-512' },
+        },
+      };
+
+      // Should not throw - the decode failure is handled gracefully
+      await expect(
+        decryptEmailData(emailDataWithParsed, mockKeypair, 'test@example.com', mockApiClient),
+      ).resolves.toBeDefined();
+
+      expect(utilsModule.fromBase64).toHaveBeenCalledWith(invalidBase64Content);
     });
   });
 
