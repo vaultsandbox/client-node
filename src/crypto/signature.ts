@@ -44,11 +44,24 @@ function buildTranscript(
  *
  * @param encryptedData - The encrypted data with signature
  * @param decoded - Optional pre-decoded payload fields to avoid redundant decoding
+ * @param expectedServerPublicKey - Optional expected server public key (base64url) to validate against
  * @returns True if signature is valid
- * @throws SignatureVerificationError if verification fails
+ * @throws SignatureVerificationError if verification fails or server key doesn't match expected
  */
-export function verifySignature(encryptedData: EncryptedData, decoded?: DecodedPayload): boolean {
+export function verifySignature(
+  encryptedData: EncryptedData,
+  decoded?: DecodedPayload,
+  expectedServerPublicKey?: string,
+): boolean {
   try {
+    // 0. Validate server public key matches expected (MITM protection)
+    if (expectedServerPublicKey && encryptedData.server_sig_pk !== expectedServerPublicKey) {
+      throw new SignatureVerificationError(
+        'Server public key mismatch - possible MITM attack. ' +
+          'The encrypted data was signed by a different server than expected.',
+      );
+    }
+
     // 1. Use pre-decoded values or decode components
     const signature = decoded?.sig ?? fromBase64Url(encryptedData.sig);
     const ctKem = decoded?.ctKem ?? fromBase64Url(encryptedData.ct_kem);

@@ -121,7 +121,13 @@ export class Inbox {
 
     for (const emailData of emailsData) {
       const email = isEncryptedEmailData(emailData)
-        ? await decryptEmailData(emailData, this.requireKeypair(), this.emailAddress, this.apiClient)
+        ? await decryptEmailData(
+            emailData,
+            this.requireKeypair(),
+            this.emailAddress,
+            this.apiClient,
+            /* istanbul ignore next - defensive null to undefined */ this.serverPublicKey ?? undefined,
+          )
         : decodeBase64EmailData(emailData, this.emailAddress, this.apiClient);
       emails.push(email);
     }
@@ -144,7 +150,11 @@ export class Inbox {
     for (const emailData of emailsData) {
       let metadata: DecryptedMetadata;
       if (isEncryptedEmailData(emailData)) {
-        metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, this.requireKeypair());
+        metadata = await decryptMetadata<DecryptedMetadata>(
+          emailData.encryptedMetadata,
+          this.requireKeypair(),
+          /* istanbul ignore next - defensive null to undefined */ this.serverPublicKey ?? undefined,
+        );
       } else {
         // Plain email - decode base64 metadata
         const metadataJson = Buffer.from(emailData.metadata, 'base64').toString('utf-8');
@@ -173,7 +183,13 @@ export class Inbox {
     debug('Retrieving email %s from inbox %s', emailId, this.emailAddress);
     const emailData = await this.apiClient.getEmail(this.emailAddress, emailId);
     const email = isEncryptedEmailData(emailData)
-      ? await decryptEmailData(emailData, this.requireKeypair(), this.emailAddress, this.apiClient)
+      ? await decryptEmailData(
+          emailData,
+          this.requireKeypair(),
+          this.emailAddress,
+          this.apiClient,
+          /* istanbul ignore next - defensive null to undefined */ this.serverPublicKey ?? undefined,
+        )
       : decodeBase64EmailData(emailData, this.emailAddress, this.apiClient);
     debug('Successfully retrieved and processed email %s', emailId);
     return email;
@@ -190,7 +206,8 @@ export class Inbox {
     const rawEmailData = await this.apiClient.getRawEmail(this.emailAddress, emailId);
     let raw: string;
     if (rawEmailData.encryptedRaw) {
-      raw = await decryptRaw(rawEmailData.encryptedRaw, this.requireKeypair());
+      /* istanbul ignore next - defensive null to undefined */
+      raw = await decryptRaw(rawEmailData.encryptedRaw, this.requireKeypair(), this.serverPublicKey ?? undefined);
     } else if (rawEmailData.raw) {
       // Plain email - decode base64
       raw = Buffer.from(rawEmailData.raw, 'base64').toString('utf-8');
@@ -215,7 +232,13 @@ export class Inbox {
       throw new StrategyError('No delivery strategy set. Call setStrategy() first.');
     }
     debug('Waiting for email in inbox %s with options: %O', this.emailAddress, options);
-    const email = await this.strategy.waitForEmail(this.emailAddress, this.inboxHash, this.keypair, options);
+    const email = await this.strategy.waitForEmail(
+      this.emailAddress,
+      this.inboxHash,
+      this.keypair,
+      options,
+      this.serverPublicKey,
+    );
     debug('Successfully received email %s in inbox %s', email.id, this.emailAddress);
     return email;
   }
@@ -305,7 +328,16 @@ export class Inbox {
     }
 
     debug('Subscribing to new emails for inbox %s', this.emailAddress);
-    const subscription = this.strategy.subscribe(this.emailAddress, this.inboxHash, this.keypair, callback);
+    const subscription = this.strategy.subscribe(
+      this.emailAddress,
+      this.inboxHash,
+      this.keypair,
+      callback,
+      undefined,
+      undefined,
+      undefined,
+      this.serverPublicKey,
+    );
 
     // Track the subscription and wrap unsubscribe to remove from tracking
     const trackedSubscription: Subscription = {

@@ -56,25 +56,36 @@ function transformAttachmentContent(attachments: AttachmentData[]): AttachmentDa
  * Decrypts an EncryptedEmailData object into an Email instance.
  * Expects full email data with encryptedParsed content.
  * IMPORTANT: Signature verification happens BEFORE decryption for security
+ *
+ * @param emailData - The encrypted email data
+ * @param keypair - The recipient's keypair for decryption
+ * @param emailAddress - The inbox email address
+ * @param apiClient - API client for email operations
+ * @param expectedServerPublicKey - Optional expected server public key (base64url) for MITM protection
  */
 export async function decryptEmailData(
   emailData: EncryptedEmailData,
   keypair: Keypair,
   emailAddress: string,
   apiClient: ApiClient,
+  expectedServerPublicKey?: string,
 ): Promise<IEmail> {
-  // Verify signature FIRST (before decryption) - signature includes server public key
-  verifySignature(emailData.encryptedMetadata);
+  // Verify signature FIRST (before decryption) - also validates server public key if provided
+  verifySignature(emailData.encryptedMetadata, undefined, expectedServerPublicKey);
 
-  // Decrypt metadata
-  const metadata = await decryptMetadata<DecryptedMetadata>(emailData.encryptedMetadata, keypair);
+  // Decrypt metadata (signature already verified above, but decrypt also verifies internally)
+  const metadata = await decryptMetadata<DecryptedMetadata>(
+    emailData.encryptedMetadata,
+    keypair,
+    expectedServerPublicKey,
+  );
 
   // Decrypt parsed content if available
   let parsed: DecryptedParsed | null = null;
   if (emailData.encryptedParsed) {
     // Verify signature for parsed content too
-    verifySignature(emailData.encryptedParsed);
-    parsed = await decryptParsed<DecryptedParsed>(emailData.encryptedParsed, keypair);
+    verifySignature(emailData.encryptedParsed, undefined, expectedServerPublicKey);
+    parsed = await decryptParsed<DecryptedParsed>(emailData.encryptedParsed, keypair, expectedServerPublicKey);
 
     // Transform attachment content from base64 strings to Uint8Array
     if (parsed?.attachments) {
@@ -82,7 +93,7 @@ export async function decryptEmailData(
     }
   }
 
-  return new Email(emailData, metadata, parsed, emailAddress, apiClient, keypair);
+  return new Email(emailData, metadata, parsed, emailAddress, apiClient, keypair, expectedServerPublicKey);
 }
 
 /**

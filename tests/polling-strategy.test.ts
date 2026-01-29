@@ -151,7 +151,13 @@ describe('PollingStrategy', () => {
       expect(result).toBe(mockEmail);
       expect(apiClient.getSyncStatus).toHaveBeenCalledWith(emailAddress);
       expect(apiClient.listEmails).toHaveBeenCalledWith(emailAddress, true);
-      expect(emailUtils.decryptEmailData).toHaveBeenCalledWith(mockEmailData, mockKeypair, emailAddress, apiClient);
+      expect(emailUtils.decryptEmailData).toHaveBeenCalledWith(
+        mockEmailData,
+        mockKeypair,
+        emailAddress,
+        apiClient,
+        undefined,
+      );
       expect(emailUtils.findMatchingEmail).toHaveBeenCalled();
     });
 

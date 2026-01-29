@@ -112,10 +112,16 @@ function validatePayload(encryptedData: EncryptedData, decoded?: DecodedPayload)
  *
  * @param encryptedData - The encrypted data from the server
  * @param keypair - The recipient's keypair
+ * @param expectedServerPublicKey - Optional expected server public key (base64url) for MITM protection
  * @returns The decrypted plaintext as a Uint8Array
  * @throws DecryptionError if decryption fails
+ * @throws SignatureVerificationError if server key doesn't match expected
  */
-export async function decrypt(encryptedData: EncryptedData, keypair: Keypair): Promise<Uint8Array> {
+export async function decrypt(
+  encryptedData: EncryptedData,
+  keypair: Keypair,
+  expectedServerPublicKey?: string,
+): Promise<Uint8Array> {
   try {
     // Step 1: Decode all base64url fields once
     const decoded = decodePayload(encryptedData);
@@ -124,7 +130,8 @@ export async function decrypt(encryptedData: EncryptedData, keypair: Keypair): P
     validatePayload(encryptedData, decoded);
 
     // Step 6: SECURITY: Verify signature BEFORE decryption (prevent tampering)
-    verifySignature(encryptedData, decoded);
+    // Also validates server public key matches expected if provided (MITM protection)
+    verifySignature(encryptedData, decoded, expectedServerPublicKey);
 
     // Step 7-9: Use pre-decoded values for decapsulation, key derivation, and decryption
     const { ctKem, nonce: nonceBytes, aad: aadBytes, ciphertext: ciphertextBytes } = decoded;
@@ -185,11 +192,17 @@ export async function decrypt(encryptedData: EncryptedData, keypair: Keypair): P
  *
  * @param encryptedData - The encrypted metadata
  * @param keypair - The recipient's keypair
+ * @param expectedServerPublicKey - Optional expected server public key (base64url) for MITM protection
  * @returns The decrypted metadata as a parsed JSON object
  * @throws DecryptionError if decryption or parsing fails
+ * @throws SignatureVerificationError if server key doesn't match expected
  */
-export async function decryptMetadata<T = unknown>(encryptedData: EncryptedData, keypair: Keypair): Promise<T> {
-  const plaintext = await decrypt(encryptedData, keypair);
+export async function decryptMetadata<T = unknown>(
+  encryptedData: EncryptedData,
+  keypair: Keypair,
+  expectedServerPublicKey?: string,
+): Promise<T> {
+  const plaintext = await decrypt(encryptedData, keypair, expectedServerPublicKey);
   try {
     const jsonString = new TextDecoder().decode(plaintext);
     return JSON.parse(jsonString) as T;
@@ -205,11 +218,17 @@ export async function decryptMetadata<T = unknown>(encryptedData: EncryptedData,
  *
  * @param encryptedData - The encrypted parsed content
  * @param keypair - The recipient's keypair
+ * @param expectedServerPublicKey - Optional expected server public key (base64url) for MITM protection
  * @returns The decrypted parsed content as a JSON object
  * @throws DecryptionError if decryption or parsing fails
+ * @throws SignatureVerificationError if server key doesn't match expected
  */
-export async function decryptParsed<T = unknown>(encryptedData: EncryptedData, keypair: Keypair): Promise<T> {
-  return decryptMetadata<T>(encryptedData, keypair);
+export async function decryptParsed<T = unknown>(
+  encryptedData: EncryptedData,
+  keypair: Keypair,
+  expectedServerPublicKey?: string,
+): Promise<T> {
+  return decryptMetadata<T>(encryptedData, keypair, expectedServerPublicKey);
 }
 
 /**
@@ -217,11 +236,17 @@ export async function decryptParsed<T = unknown>(encryptedData: EncryptedData, k
  *
  * @param encryptedData - The encrypted raw email
  * @param keypair - The recipient's keypair
+ * @param expectedServerPublicKey - Optional expected server public key (base64url) for MITM protection
  * @returns The decrypted raw email as a string
  * @throws DecryptionError if decryption fails
+ * @throws SignatureVerificationError if server key doesn't match expected
  */
-export async function decryptRaw(encryptedData: EncryptedData, keypair: Keypair): Promise<string> {
-  const plaintext = await decrypt(encryptedData, keypair);
+export async function decryptRaw(
+  encryptedData: EncryptedData,
+  keypair: Keypair,
+  expectedServerPublicKey?: string,
+): Promise<string> {
+  const plaintext = await decrypt(encryptedData, keypair, expectedServerPublicKey);
   try {
     // Decrypted content is a base64-encoded string
     const base64String = new TextDecoder().decode(plaintext);

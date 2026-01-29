@@ -11,9 +11,16 @@ export interface DeliveryStrategy {
    * @param inboxHash - The inbox hash for SSE subscription
    * @param keypair - Keypair for decryption (null for plain inboxes)
    * @param options - Wait options including timeout and filters
+   * @param serverPublicKey - Optional server public key for MITM protection
    * @returns Promise resolving to the matched email
    */
-  waitForEmail(emailAddress: string, inboxHash: string, keypair: Keypair | null, options: WaitOptions): Promise<IEmail>;
+  waitForEmail(
+    emailAddress: string,
+    inboxHash: string,
+    keypair: Keypair | null,
+    options: WaitOptions,
+    serverPublicKey?: string | null,
+  ): Promise<IEmail>;
 
   /**
    * Subscribe to new email notifications
@@ -24,6 +31,7 @@ export interface DeliveryStrategy {
    * @param emailCache - Optional local email cache for sync operations
    * @param onEmailDeleted - Optional callback when email is deleted from server
    * @param onError - Optional callback when an error occurs during processing
+   * @param serverPublicKey - Optional server public key for MITM protection
    * @returns Subscription object with unsubscribe method
    */
   subscribe(
@@ -34,6 +42,7 @@ export interface DeliveryStrategy {
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
     onError?: (error: Error) => void,
+    serverPublicKey?: string | null,
   ): Subscription;
 
   /**

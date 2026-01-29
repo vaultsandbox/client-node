@@ -62,6 +62,7 @@ export class PollingStrategy implements DeliveryStrategy {
     _inboxHash: string,
     keypair: Keypair | null,
     options: WaitOptions = {},
+    serverPublicKey?: string | null,
   ): Promise<IEmail> {
     /* istanbul ignore next 2 - compile-time defaults, only one branch taken per execution */
     const timeout = options.timeout ?? 30000;
@@ -83,7 +84,7 @@ export class PollingStrategy implements DeliveryStrategy {
           if (syncStatus.emailCount > 0) {
             // Hash changed - fetch full email list with content
             const emailsData = await this.apiClient.listEmails(emailAddress, true);
-            const emails = await this.processEmails(emailsData, keypair, emailAddress);
+            const emails = await this.processEmails(emailsData, keypair, emailAddress, serverPublicKey);
             const matchingEmail = findMatchingEmail(emails, options);
 
             if (matchingEmail) {
@@ -144,12 +145,19 @@ export class PollingStrategy implements DeliveryStrategy {
     emailsData: EmailData[],
     keypair: Keypair | null,
     emailAddress: string,
+    serverPublicKey?: string | null,
   ): Promise<IEmail[]> {
     const emails: IEmail[] = [];
 
     for (const emailData of emailsData) {
       const email = isEncryptedEmailData(emailData)
-        ? await decryptEmailData(emailData, this.validateKeypair(keypair, emailAddress), emailAddress, this.apiClient)
+        ? await decryptEmailData(
+            emailData,
+            this.validateKeypair(keypair, emailAddress),
+            emailAddress,
+            this.apiClient,
+            serverPublicKey ?? undefined,
+          )
         : decodeBase64EmailData(emailData, emailAddress, this.apiClient);
       emails.push(email);
     }
@@ -168,6 +176,7 @@ export class PollingStrategy implements DeliveryStrategy {
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
     onError?: (error: Error) => void,
+    serverPublicKey?: string | null,
   ): Subscription {
     let isActive = true;
     const localCache = emailCache ?? new Map<string, EmailData>();
@@ -196,6 +205,7 @@ export class PollingStrategy implements DeliveryStrategy {
                         this.validateKeypair(keypair, emailAddress),
                         emailAddress,
                         this.apiClient,
+                        serverPublicKey ?? undefined,
                       )
                     : decodeBase64EmailData(fullEmailData, emailAddress, this.apiClient);
 

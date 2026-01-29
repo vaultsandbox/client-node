@@ -246,9 +246,13 @@ describe('Inbox', () => {
       const result = await inbox.waitForEmail({ timeout: 5000 });
 
       expect(result).toBe(mockEmail);
-      expect(mockStrategy.waitForEmail).toHaveBeenCalledWith(inbox.emailAddress, inbox.inboxHash, mockKeypair, {
-        timeout: 5000,
-      });
+      expect(mockStrategy.waitForEmail).toHaveBeenCalledWith(
+        inbox.emailAddress,
+        inbox.inboxHash,
+        mockKeypair,
+        { timeout: 5000 },
+        'mock-server-pk',
+      );
     });
   });
 
@@ -454,7 +458,16 @@ describe('Inbox', () => {
       // Result is a wrapped subscription that tracks active subscriptions
       expect(result).toHaveProperty('unsubscribe');
       expect(typeof result.unsubscribe).toBe('function');
-      expect(mockStrategy.subscribe).toHaveBeenCalledWith(inbox.emailAddress, inbox.inboxHash, mockKeypair, callback);
+      expect(mockStrategy.subscribe).toHaveBeenCalledWith(
+        inbox.emailAddress,
+        inbox.inboxHash,
+        mockKeypair,
+        callback,
+        undefined,
+        undefined,
+        undefined,
+        'mock-server-pk',
+      );
 
       // When we unsubscribe, it should call the underlying subscription's unsubscribe
       result.unsubscribe();
@@ -535,6 +548,7 @@ describe('Inbox', () => {
         mockKeypair,
         inbox.emailAddress,
         mockApiClient,
+        'mock-server-pk',
       );
     });
   });
@@ -556,7 +570,11 @@ describe('Inbox', () => {
         raw: 'raw email content',
       });
       expect(mockApiClient.getRawEmail).toHaveBeenCalledWith(inbox.emailAddress, 'email-123');
-      expect(decryptModule.decryptRaw).toHaveBeenCalledWith(mockRawEmailData.encryptedRaw, mockKeypair);
+      expect(decryptModule.decryptRaw).toHaveBeenCalledWith(
+        mockRawEmailData.encryptedRaw,
+        mockKeypair,
+        'mock-server-pk',
+      );
     });
   });
 

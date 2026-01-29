@@ -241,6 +241,35 @@ describe('Crypto Mocked Logic', () => {
         });
         expect(() => verifySignature(validEncryptedData)).toThrow(SignatureVerificationError);
       });
+
+      it('should throw SignatureVerificationError if server public key does not match expected', () => {
+        (ml_dsa65.verify as jest.Mock).mockReturnValue(true);
+        const differentServerPk = 'different-server-public-key';
+
+        expect(() => verifySignature(validEncryptedData, undefined, differentServerPk)).toThrow(
+          SignatureVerificationError,
+        );
+        expect(() => verifySignature(validEncryptedData, undefined, differentServerPk)).toThrow(
+          /Server public key mismatch/,
+        );
+        // Should not call ml_dsa65.verify if key mismatch is detected first
+        expect(ml_dsa65.verify).not.toHaveBeenCalled();
+      });
+
+      it('should proceed with verification when server public key matches expected', () => {
+        (ml_dsa65.verify as jest.Mock).mockReturnValue(true);
+        const expectedServerPk = validEncryptedData.server_sig_pk;
+
+        expect(verifySignature(validEncryptedData, undefined, expectedServerPk)).toBe(true);
+        expect(ml_dsa65.verify).toHaveBeenCalled();
+      });
+
+      it('should proceed with verification when no expected server public key is provided', () => {
+        (ml_dsa65.verify as jest.Mock).mockReturnValue(true);
+
+        expect(verifySignature(validEncryptedData)).toBe(true);
+        expect(ml_dsa65.verify).toHaveBeenCalled();
+      });
     });
 
     describe('verifySignatureSafe', () => {

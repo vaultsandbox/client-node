@@ -152,6 +152,7 @@ export class Email implements IEmail {
   private emailAddress: string;
   private apiClient: ApiClient;
   private keypair: Keypair | null;
+  private serverPublicKey: string | null;
 
   /**
    * @internal
@@ -164,6 +165,7 @@ export class Email implements IEmail {
     emailAddress: string,
     apiClient: ApiClient,
     keypair: Keypair | null,
+    serverPublicKey?: string | null,
   ) {
     this.id = emailData.id;
     this.from = metadata.from;
@@ -176,6 +178,7 @@ export class Email implements IEmail {
     this.emailAddress = emailAddress;
     this.apiClient = apiClient;
     this.keypair = keypair;
+    this.serverPublicKey = serverPublicKey ?? null;
 
     // istanbul ignore next -- this.to is always an array per line 166, else branch is defensive
     debug('Creating email %s from %s to %s', this.id, this.from, Array.isArray(this.to) ? this.to.join(', ') : this.to);
@@ -276,7 +279,7 @@ export class Email implements IEmail {
       if (!this.keypair) {
         throw new DecryptionError(`Cannot decrypt raw email: no keypair available for ${this.emailAddress}`);
       }
-      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair);
+      raw = await decryptRaw(rawEmailData.encryptedRaw, this.keypair, this.serverPublicKey ?? undefined);
     } else if (rawEmailData.raw) {
       // Plain inbox - decode base64
       raw = Buffer.from(rawEmailData.raw, 'base64').toString('utf-8');

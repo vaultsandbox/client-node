@@ -266,8 +266,16 @@ describe('email-utils', () => {
     it('should decrypt email without encryptedParsed', async () => {
       await decryptEmailData(mockEmailData, mockKeypair, 'test@example.com', mockApiClient);
 
-      expect(signatureModule.verifySignature).toHaveBeenCalledWith(mockEmailData.encryptedMetadata);
-      expect(decryptModule.decryptMetadata).toHaveBeenCalledWith(mockEmailData.encryptedMetadata, mockKeypair);
+      expect(signatureModule.verifySignature).toHaveBeenCalledWith(
+        mockEmailData.encryptedMetadata,
+        undefined,
+        undefined,
+      );
+      expect(decryptModule.decryptMetadata).toHaveBeenCalledWith(
+        mockEmailData.encryptedMetadata,
+        mockKeypair,
+        undefined,
+      );
       expect(decryptModule.decryptParsed).not.toHaveBeenCalled();
     });
 
@@ -289,7 +297,11 @@ describe('email-utils', () => {
       await decryptEmailData(emailDataWithParsed, mockKeypair, 'test@example.com', mockApiClient);
 
       expect(signatureModule.verifySignature).toHaveBeenCalledTimes(2);
-      expect(decryptModule.decryptParsed).toHaveBeenCalledWith(emailDataWithParsed.encryptedParsed, mockKeypair);
+      expect(decryptModule.decryptParsed).toHaveBeenCalledWith(
+        emailDataWithParsed.encryptedParsed,
+        mockKeypair,
+        undefined,
+      );
     });
 
     it('should convert base64 string attachment content to Uint8Array', async () => {

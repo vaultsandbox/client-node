@@ -30,6 +30,7 @@ interface InboxSubscription {
   emailAddress: string;
   inboxHash: string;
   keypair: Keypair | null;
+  serverPublicKey: string | null;
   callbacks: Set<(email: IEmail) => void | Promise<void>>;
   errorCallbacks: Set<(error: Error) => void>;
   seenEmailIds: Set<string>;
@@ -126,6 +127,7 @@ export class SSEStrategy implements DeliveryStrategy {
     inboxHash: string,
     keypair: Keypair | null,
     /* istanbul ignore next - default parameter */ options: WaitOptions = {},
+    serverPublicKey?: string | null,
   ): Promise<IEmail> {
     const timeout = options.timeout ?? /* istanbul ignore next - default timeout */ 30000;
     const startTime = Date.now();
@@ -140,17 +142,26 @@ export class SSEStrategy implements DeliveryStrategy {
         }
       }, timeout);
 
-      const subscription = this.subscribe(emailAddress, inboxHash, keypair, async (email) => {
-        /* istanbul ignore if - race condition guard */ if (resolved) return;
+      const subscription = this.subscribe(
+        emailAddress,
+        inboxHash,
+        keypair,
+        async (email) => {
+          /* istanbul ignore if - race condition guard */ if (resolved) return;
 
-        // Check if email matches filters
-        if (matchesFilters(email, options)) {
-          resolved = true;
-          clearTimeout(timeoutTimer);
-          subscription.unsubscribe();
-          resolve(email);
-        }
-      });
+          // Check if email matches filters
+          if (matchesFilters(email, options)) {
+            resolved = true;
+            clearTimeout(timeoutTimer);
+            subscription.unsubscribe();
+            resolve(email);
+          }
+        },
+        undefined,
+        undefined,
+        undefined,
+        serverPublicKey,
+      );
 
       // If we're past the timeout already, reject immediately
       if (Date.now() - startTime >= timeout) {
@@ -173,6 +184,7 @@ export class SSEStrategy implements DeliveryStrategy {
     emailCache?: Map<string, EmailData>,
     onEmailDeleted?: (emailId: string) => void,
     onError?: (error: Error) => void,
+    serverPublicKey?: string | null,
   ): Subscription {
     // Get or create subscription entry
     let subscription = this.subscriptions.get(emailAddress);
@@ -181,6 +193,7 @@ export class SSEStrategy implements DeliveryStrategy {
         emailAddress,
         inboxHash,
         keypair,
+        serverPublicKey: serverPublicKey ?? null,
         callbacks: new Set(),
         errorCallbacks: new Set(),
         seenEmailIds: new Set(),
@@ -370,6 +383,7 @@ export class SSEStrategy implements DeliveryStrategy {
             this.validateKeypair(subscription.keypair, subscription.emailAddress),
             subscription.emailAddress,
             this.apiClient,
+            /* istanbul ignore next - defensive null to undefined */ subscription.serverPublicKey ?? undefined,
           )
         : decodeBase64EmailData(emailData, subscription.emailAddress, this.apiClient);
 
@@ -479,6 +493,7 @@ export class SSEStrategy implements DeliveryStrategy {
                     this.validateKeypair(subscription.keypair, subscription.emailAddress),
                     subscription.emailAddress,
                     this.apiClient,
+                    subscription.serverPublicKey ?? undefined,
                   )
                 : /* istanbul ignore next */ decodeBase64EmailData(
                     fullEmailData,
