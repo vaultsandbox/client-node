@@ -69,7 +69,7 @@
   "devDependencies": {
     "@types/debug": "4.1.12",
     "@types/jest": "30.0.0",
-    "@types/node": "25.0.10",
+    "@types/node": "25.2.0",
     "@typescript-eslint/eslint-plugin": "8.53.1",
     "@typescript-eslint/parser": "8.53.1",
     "dotenv": "17.2.3",
