@@ -207,6 +207,7 @@ export class ApiClient {
     encryption?: 'encrypted' | 'plain',
     spamAnalysis?: boolean,
     chaos?: ChaosConfigRequest,
+    persistence?: 'persistent' | 'ephemeral',
   ): Promise<InboxData> {
     const payload: {
       clientKemPk?: string;
@@ -216,6 +217,7 @@ export class ApiClient {
       encryption?: 'encrypted' | 'plain';
       spamAnalysis?: boolean;
       chaos?: ChaosConfigRequest;
+      persistence?: 'persistent' | 'ephemeral';
     } = {};
     if (publicKey !== undefined && publicKey !== null) {
       payload.clientKemPk = publicKey;
@@ -237,6 +239,9 @@ export class ApiClient {
     }
     if (chaos !== undefined) {
       payload.chaos = chaos;
+    }
+    if (persistence !== undefined) {
+      payload.persistence = persistence;
     }
     const response = await this.client.post<InboxData>('/api/inboxes', payload);
     return response.data;

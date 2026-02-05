@@ -23,6 +23,7 @@ import type {
   InboxData,
   Keypair,
   EncryptionPolicy,
+  PersistencePolicy,
 } from './types/index.js';
 import {
   InboxNotFoundError,
@@ -89,6 +90,7 @@ export class VaultSandboxClient {
   private config: ClientConfig;
   private serverPublicKey: string | null = null;
   private encryptionPolicy: EncryptionPolicy | null = null;
+  private persistencePolicy: PersistencePolicy | null = null;
   private maxTtl: number | null = null;
   private inboxes: Map<string, Inbox> = new Map();
   private strategy: DeliveryStrategy | null = null;
@@ -115,6 +117,7 @@ export class VaultSandboxClient {
     const serverInfo = await this.apiClient.getServerInfo();
     this.serverPublicKey = serverInfo.serverSigPk;
     this.encryptionPolicy = serverInfo.encryptionPolicy;
+    this.persistencePolicy = serverInfo.persistencePolicy ?? null;
     this.maxTtl = serverInfo.maxTtl;
 
     // Create delivery strategy based on config
@@ -210,6 +213,7 @@ export class VaultSandboxClient {
         options.encryption,
         options.spamAnalysis,
         options.chaos,
+        options.persistence,
       );
     } catch (error) {
       // Convert 409 Conflict to InboxAlreadyExistsError
