@@ -231,6 +231,37 @@ describe('VaultSandbox Client Unit Tests', () => {
     });
   });
 
+  it('should default persistencePolicy to null when server info omits it', async () => {
+    const client = new VaultSandboxClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    const clientWithPrivates = client as unknown as {
+      apiClient: ApiClient;
+      persistencePolicy: string | null;
+    };
+
+    // Mock getServerInfo to return response without persistencePolicy
+    clientWithPrivates.apiClient.getServerInfo = jest.fn().mockResolvedValue({
+      serverSigPk: 'mock-key',
+      encryptionPolicy: 'enabled',
+      maxTtl: 86400,
+      defaultTtl: 3600,
+      sseConsole: false,
+      allowedDomains: [],
+      algs: { kem: 'ML-KEM-768', sig: 'ML-DSA-65', aead: 'AES-256-GCM', kdf: 'HKDF-SHA-512' },
+      context: 'vaultsandbox:email:v1',
+      // persistencePolicy intentionally omitted
+    });
+
+    // Trigger ensureInitialized via getServerInfo -> createInbox would also work
+    // but we need to access privates, so call createInbox with a TTL error to short-circuit
+    await expect(client.createInbox({ ttl: 0 })).rejects.toThrow('TTL must be positive');
+
+    expect(clientWithPrivates.persistencePolicy).toBeNull();
+  });
+
   it('should throw StrategyError when calling monitorInboxes before initialization', () => {
     const uninitializedClient = new VaultSandboxClient({
       url: 'http://localhost:3000',

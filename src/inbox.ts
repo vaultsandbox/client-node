@@ -55,6 +55,8 @@ export class Inbox {
   readonly emailAuth: boolean;
   /** Whether spam analysis is enabled for this inbox. */
   readonly spamAnalysis?: boolean;
+  /** Whether this inbox is persistent (survives server restarts). */
+  readonly persistent?: boolean;
 
   private keypair: Keypair | null;
   private apiClient: ApiClient;
@@ -74,6 +76,7 @@ export class Inbox {
     this.encrypted = inboxData.encrypted;
     this.emailAuth = inboxData.emailAuth ?? false;
     this.spamAnalysis = inboxData.spamAnalysis;
+    this.persistent = inboxData.persistent;
     this.keypair = keypair;
     this.apiClient = apiClient;
     this.serverPublicKey = serverPublicKey;

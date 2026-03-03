@@ -33,6 +33,7 @@ export type {
   Subscription,
   ExportedInboxData,
   EncryptionPolicy,
+  PersistencePolicy,
   EmailData,
   EncryptedEmailData,
   PlainEmailData,

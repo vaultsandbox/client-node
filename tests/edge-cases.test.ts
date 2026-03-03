@@ -949,6 +949,106 @@ describe('SSEStrategy Edge Cases', () => {
   });
 });
 
+describe('ApiClient createInbox with persistence', () => {
+  let mockAxiosInstance: {
+    get: jest.Mock;
+    post: jest.Mock;
+    delete: jest.Mock;
+    patch: jest.Mock;
+    interceptors: {
+      response: {
+        use: jest.Mock;
+      };
+    };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockAxiosInstance = {
+      get: jest.fn(),
+      post: jest.fn(),
+      delete: jest.fn(),
+      patch: jest.fn(),
+      interceptors: {
+        response: {
+          use: jest.fn(),
+        },
+      },
+    };
+
+    mockedAxios.create.mockReturnValue(mockAxiosInstance as unknown as ReturnType<typeof axios.create>);
+  });
+
+  it('should include persistence in payload when set to persistent', async () => {
+    const client = new ApiClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    mockAxiosInstance.post.mockResolvedValue({
+      data: {
+        emailAddress: 'test@example.com',
+        expiresAt: '2024-01-01T00:00:00Z',
+        inboxHash: 'hash123',
+        encrypted: false,
+        persistent: true,
+      },
+    });
+
+    await client.createInbox(undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'persistent');
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+      persistence: 'persistent',
+    });
+  });
+
+  it('should include persistence in payload when set to ephemeral', async () => {
+    const client = new ApiClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    mockAxiosInstance.post.mockResolvedValue({
+      data: {
+        emailAddress: 'test@example.com',
+        expiresAt: '2024-01-01T00:00:00Z',
+        inboxHash: 'hash123',
+        encrypted: false,
+        persistent: false,
+      },
+    });
+
+    await client.createInbox(undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'ephemeral');
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+      persistence: 'ephemeral',
+    });
+  });
+
+  it('should omit persistence from payload when undefined', async () => {
+    const client = new ApiClient({
+      url: 'http://localhost:3000',
+      apiKey: 'test-api-key',
+    });
+
+    mockAxiosInstance.post.mockResolvedValue({
+      data: {
+        emailAddress: 'test@example.com',
+        expiresAt: '2024-01-01T00:00:00Z',
+        inboxHash: 'hash123',
+        encrypted: false,
+      },
+    });
+
+    await client.createInbox('pk123', undefined, undefined, undefined, undefined, undefined, undefined, undefined);
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/inboxes', {
+      clientKemPk: 'pk123',
+    });
+  });
+});
+
 describe('ApiClient createInbox with emailAddress', () => {
   let mockAxiosInstance: {
     get: jest.Mock;

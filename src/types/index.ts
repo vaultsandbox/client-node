@@ -68,6 +68,8 @@ export interface CreateInboxOptions {
    * Only available when the server has chaos engineering enabled (chaosEnabled: true in server info).
    */
   chaos?: ChaosConfigRequest;
+  /** Request persistent or ephemeral inbox. Omit to use server default based on persistencePolicy. */
+  persistence?: 'persistent' | 'ephemeral';
 }
 
 /**
@@ -124,6 +126,8 @@ export interface InboxData {
   emailAuth?: boolean;
   /** Spam analysis setting for this inbox. May be omitted if using server default. */
   spamAnalysis?: boolean;
+  /** Whether this inbox is persistent (survives server restarts). */
+  persistent?: boolean;
 }
 
 /**
@@ -515,6 +519,15 @@ export interface AuthResults extends AuthResultsData {
 export type EncryptionPolicy = 'always' | 'enabled' | 'disabled' | 'never';
 
 /**
+ * The server's persistence policy for inboxes.
+ * - `always`: All inboxes are persistent, no override allowed
+ * - `enabled`: Inboxes are persistent by default, can request ephemeral
+ * - `disabled`: Inboxes are ephemeral by default, can request persistent
+ * - `never`: All inboxes are ephemeral, no override allowed
+ */
+export type PersistencePolicy = 'always' | 'enabled' | 'disabled' | 'never';
+
+/**
  * Information about the VaultSandbox server.
  */
 export interface ServerInfo {
@@ -547,6 +560,10 @@ export interface ServerInfo {
   spamAnalysisEnabled?: boolean;
   /** Whether chaos engineering features are enabled on this server. */
   chaosEnabled?: boolean;
+  /** The server's persistence policy for inboxes. */
+  persistencePolicy?: PersistencePolicy;
+  /** Whether global webhooks are persisted. */
+  persistentGlobalWebhooks?: boolean;
 }
 
 // ===== Subscriptions =====
