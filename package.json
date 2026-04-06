@@ -67,19 +67,19 @@
     "eventsource": "4.1.0"
   },
   "devDependencies": {
-    "@types/debug": "4.1.12",
+    "@types/debug": "4.1.13",
     "@types/jest": "30.0.0",
-    "@types/node": "25.2.0",
+    "@types/node": "25.5.2",
     "@typescript-eslint/eslint-plugin": "8.56.1",
     "@typescript-eslint/parser": "8.56.1",
     "dotenv": "17.3.1",
-    "eslint": "9.39.2",
+    "eslint": "10.2.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-prettier": "5.5.5",
-    "jest": "30.2.0",
+    "jest": "30.3.0",
     "prettier": "3.8.1",
-    "ts-jest": "29.4.6",
+    "ts-jest": "29.4.9",
     "tsx": "4.21.0",
-    "typescript": "5.9.3"
+    "typescript": "6.0.2"
   }
 }
