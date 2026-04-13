@@ -61,7 +61,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
-    "@noble/post-quantum": "0.5.4",
+    "@noble/post-quantum": "0.6.1",
     "axios": "1.13.6",
     "debug": "4.4.3",
     "eventsource": "4.1.0"
